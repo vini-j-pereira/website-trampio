@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Sidebar } from "@/components/Sidebar";
+import Header  from "@/components/header";
 import "./globals.css";
 
 const inter = Inter({
@@ -21,8 +22,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} antialiased flex bg-background min-h-screen`}>
-        <Sidebar />
-        <main className="flex-1 md:ml-20 transition-all duration-300">
+        <Header/>
+        <main className="flex-1 md:ml-20 transition-all duration-300 pt-28">
           {children}
         </main>
       </body>
