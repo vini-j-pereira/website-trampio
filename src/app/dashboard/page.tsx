@@ -415,7 +415,7 @@ export default function DashboardPage() {
           })()}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Link href="/search" className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-border bg-white text-sm font-medium hover:bg-muted transition shadow-sm">
+          <Link href="/dashboard/search" className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-border bg-white text-sm font-medium hover:bg-muted transition shadow-sm">
             <Search className="h-4 w-4 text-primary" />
             <span className="hidden sm:inline">Buscar Serviço</span>
           </Link>
