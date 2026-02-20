@@ -47,8 +47,8 @@ export default function Header() {
 
   // Links mobile
   const homeLinks = [
-    { label: "Login", href: "/dashboard" },
-    { label: "Cadastro", href: "/signup" },
+    { label: "Login", href: "/login" },
+    { label: "Cadastro", href: "/register" },
     { label: "Buscar Serviços", href: "/search" },
   ];
 
@@ -101,7 +101,7 @@ export default function Header() {
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-2">
             {isHome ? (
-              <Link href="/dashboard" className="flex items-center gap-2">
+              <Link href="/login" className="flex items-center gap-2">
                 <User className="h-5 w-5" />
                 <span className="text-sm">Login</span>
               </Link>

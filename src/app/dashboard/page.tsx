@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react"
 import Link from "next/link"
-import { Star, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Trash2, Plus, X, Search, FileText, Pencil, Check, Target, Flame, Settings, MapPin } from "lucide-react"
+import { Star, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Trash2, Plus, X, Search, FileText, Pencil, Check, Target, Flame, Settings, MapPin, Bell, MessageCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ReportModal, formatDate } from "./ReportModal"
 import { SettingsModal, defaultProfile } from "./SettingsModal"
@@ -287,37 +287,31 @@ export default function DashboardPage() {
   const totalAReceber = transactions.filter(t => t.type === "a-receber").reduce((s, t) => s + t.value, 0)
   const saldo = totalEntradas - totalSaidas
 
-  // ── Goal computations (transactions + calendar event earnings) ────────────
-  const weekEarned = useMemo(() => {
-    const txWeek = transactions
+  // ── Goal computations ─────────────────────────────────────────────────────
+  // Events with earnings already auto-create linked "entrada" transactions via
+  // saveEvent(), so we only read from transactions to avoid double-counting.
+  const weekEarned = useMemo(() =>
+    transactions
       .filter(t => t.type === "entrada")
       .filter(t => { const d = new Date(t.date); return d >= wStart && d <= wEnd })
       .reduce((s, t) => s + t.value, 0)
-    const evWeek = events
-      .filter(e => { const d = new Date(e.year, e.month, e.day); return d >= wStart && d <= wEnd })
-      .reduce((s, e) => s + (e.earnings || 0), 0)
-    return txWeek + evWeek
-  }, [transactions, events, wStart, wEnd])
+    , [transactions, wStart, wEnd])
 
-  const monthEarned = useMemo(() => {
-    const txMonth = transactions
+  const monthEarned = useMemo(() =>
+    transactions
       .filter(t => t.type === "entrada")
       .filter(t => { const [y, m] = t.date.split("-").map(Number); return y === today.getFullYear() && m - 1 === today.getMonth() })
       .reduce((s, t) => s + t.value, 0)
-    const evMonth = events
-      .filter(e => e.month === today.getMonth() && e.year === today.getFullYear())
-      .reduce((s, e) => s + (e.earnings || 0), 0)
-    return txMonth + evMonth
-  }, [transactions, events])
+    , [transactions])
 
   const sparklineData = useMemo(() => Array.from({ length: 12 }, (_, i) => {
     const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (11 - i))
     const [m, y] = [d.getMonth(), d.getFullYear()]
-    return transactions.filter(t => {
-      if (t.type !== "entrada") return false
-      const [ty, tm] = t.date.split("-").map(Number)
-      return ty === y && tm - 1 === m
-    }).reduce((s, t) => s + t.value, 0)
+    // Net balance per month: entradas minus saidas (a-receber excluded — pending)
+    return transactions
+      .filter(t => t.type !== "a-receber")
+      .filter(t => { const [ty, tm] = t.date.split("-").map(Number); return ty === y && tm - 1 === m })
+      .reduce((s, t) => s + (t.type === "entrada" ? t.value : -t.value), 0)
   }), [transactions])
 
   const monthLabels = useMemo(() => Array.from({ length: 12 }, (_, i) => {
@@ -423,6 +417,24 @@ export default function DashboardPage() {
             <FileText className="h-4 w-4" />
             <span className="hidden sm:inline">Exportar Relatório</span>
           </button>
+
+          {/* Notifications */}
+          <Link
+            href="/chat"
+            className="relative flex items-center justify-center h-10 w-10 rounded-full border border-border bg-white shadow-sm hover:bg-muted transition"
+            title="Chat"
+          >
+            <MessageCircle className="h-5 w-5 text-muted-foreground" />
+            <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary border-2 border-white" />
+          </Link>
+          <button
+            className="relative flex items-center justify-center h-10 w-10 rounded-full border border-border bg-white shadow-sm hover:bg-muted transition"
+            title="Notificações"
+          >
+            <Bell className="h-5 w-5 text-muted-foreground" />
+            <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-white" />
+          </button>
+
           {/* Settings + User chip */}
           <div className="flex items-center gap-2 bg-white border border-border rounded-full px-3 py-2 shadow-sm">
             {profile.avatar
@@ -539,18 +551,21 @@ export default function DashboardPage() {
         <div className="bg-white rounded-2xl border border-border shadow-sm p-5 lg:col-span-2">
           <div className="flex items-start justify-between mb-2">
             <div>
-              <span className="text-sm font-semibold">Receita</span>
+              <span className="text-sm font-semibold">Fluxo de Caixa</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-3xl font-bold">{fmt(totalEntradas)}</span>
-                {totalEntradas > 0 && <TrendBadge value="acumulado" positive />}
+                <span className={cn("text-3xl font-bold", saldo >= 0 ? "text-foreground" : "text-red-600")}>
+                  {saldo >= 0 ? "" : "-"}{fmt(Math.abs(saldo))}
+                </span>
+                <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full",
+                  saldo >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                  {saldo >= 0 ? "Saldo positivo" : "Saldo negativo"}
+                </span>
               </div>
-              <p className="text-xs text-muted-foreground">Total de entradas</p>
+              <p className="text-xs text-muted-foreground">Saldo líquido (entradas − saídas)</p>
             </div>
             <div className="text-right">
-              <p className="text-xs text-muted-foreground">Saldo</p>
-              <p className={cn("text-xl font-bold", saldo >= 0 ? "text-green-600" : "text-red-600")}>
-                {saldo >= 0 ? "+" : ""}{fmt(saldo)}
-              </p>
+              <p className="text-xs text-muted-foreground">Receita bruta</p>
+              <p className="text-xl font-bold text-green-600">{fmt(totalEntradas)}</p>
             </div>
           </div>
           <Sparkline data={sparklineData} />
