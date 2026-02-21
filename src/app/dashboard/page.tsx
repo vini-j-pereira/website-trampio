@@ -1,13 +1,19 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import Link from "next/link"
-import { Star, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Trash2, Plus, X, Search, FileText, Pencil, Check, Target, Flame, Settings, MapPin, Bell, MessageCircle } from "lucide-react"
+import { Star, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Trash2, Plus, X, Search, FileText, Pencil, Check, Flame, Settings, Bell, MessageCircle, LayoutDashboard, Users, FolderOpen, Megaphone, Building2, AlertTriangle, Calendar, Vote, Handshake } from "lucide-react"
 import { cn } from "@/lib/utils"
+import Link from "next/link"
 import { ReportModal, formatDate } from "./ReportModal"
 import { SettingsModal, defaultProfile } from "./SettingsModal"
 import type { CalendarEvent, Transaction, TransactionType } from "./ReportModal"
 import type { UserProfile } from "./SettingsModal"
+import { MeetingsTab } from "./MeetingsTab"
+import { DocumentsTab } from "./DocumentsTab"
+import { AnnouncementsTab } from "./AnnouncementsTab"
+import { VotingsTab } from "./VotingsTab"
+import { ProvidersTab } from "./ProvidersTab"
+import { useLocalStorage } from "./useLocalStorage"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -90,7 +96,7 @@ const TX_COLORS = {
 
 const TX_LABELS: Record<TransactionType, string> = { entrada: "Entrada", saida: "Saída", "a-receber": "A receber" }
 const TX_TYPES: TransactionType[] = ["entrada", "saida", "a-receber"]
-const CATEGORIES = ["Serviço", "Material", "Estoque", "Aluguel de equipamento", "Transporte", "Outros"]
+const CATEGORIES = ["Taxa de condomínio", "Fundo de reserva", "Manutenção", "Limpeza", "Segurança", "Energia", "Água", "Outros"]
 
 function TxTypeToggle({ value, onChange }: { value: TransactionType; onChange: (t: TransactionType) => void }) {
   return (
@@ -106,91 +112,107 @@ function TxTypeToggle({ value, onChange }: { value: TransactionType; onChange: (
   )
 }
 
-// ─── Goal Card ───────────────────────────────────────────────────────────────
+// ─── Condominium summary cards ────────────────────────────────────────────────
 
-function GoalCard({
-  label, goal, earned, onSetGoal,
-}: {
-  label: string
-  goal: number | null
-  earned: number
-  onSetGoal: (v: number) => void
+function CondoSummaryCards({ totalUnits, defaulters, nextMeeting }: {
+  totalUnits: number
+  defaulters: number
+  nextMeeting: string | null
+}) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="bg-white border border-border rounded-2xl shadow-sm px-5 py-4 flex items-center gap-4">
+        <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+          <Building2 className="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Total de Unidades</p>
+          <p className="text-2xl font-bold">{totalUnits}</p>
+        </div>
+      </div>
+      <div className="bg-white border border-border rounded-2xl shadow-sm px-5 py-4 flex items-center gap-4">
+        <div className={cn("h-11 w-11 rounded-xl flex items-center justify-center shrink-0",
+          defaulters > 0 ? "bg-red-100" : "bg-green-100")}>
+          <AlertTriangle className={cn("h-5 w-5", defaulters > 0 ? "text-red-500" : "text-green-500")} />
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Inadimplentes</p>
+          <p className={cn("text-2xl font-bold", defaulters > 0 ? "text-red-600" : "text-green-600")}>{defaulters}</p>
+        </div>
+      </div>
+      <div className="bg-white border border-border rounded-2xl shadow-sm px-5 py-4 flex items-center gap-4">
+        <div className="h-11 w-11 rounded-xl bg-sky-100 flex items-center justify-center shrink-0">
+          <Calendar className="h-5 w-5 text-sky-500" />
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Próxima Reunião</p>
+          <p className="text-sm font-bold">{nextMeeting ?? "Nenhuma agendada"}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Tab navigation ───────────────────────────────────────────────────────────
+
+type DashTab = "overview" | "meetings" | "documents" | "announcements" | "votings" | "providers"
+
+const TABS: { id: DashTab; label: string; Icon: React.ElementType }[] = [
+  { id: "overview", label: "Visão Geral", Icon: LayoutDashboard },
+  { id: "meetings", label: "Reuniões", Icon: Users },
+  { id: "documents", label: "Documentos", Icon: FolderOpen },
+  { id: "announcements", label: "Comunicados", Icon: Megaphone },
+  { id: "votings", label: "Votações", Icon: Vote },
+  { id: "providers", label: "Prestadores", Icon: Handshake },
+]
+
+// ─── Goal Card (monthly only) ─────────────────────────────────────────────────
+
+function GoalCard({ label, goal, earned, onSetGoal }: {
+  label: string; goal: number | null; earned: number; onSetGoal: (v: number) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [input, setInput] = useState(String(goal ?? ""))
-
   const pct = goal && goal > 0 ? Math.min((earned / goal) * 100, 100) : 0
   const reached = goal !== null && earned >= goal
   const diff = goal !== null ? goal - earned : null
-
-  function commit() {
-    const v = Number(input)
-    if (v > 0) onSetGoal(v)
-    setEditing(false)
-  }
-
-  function motivational() {
+  function commit() { const v = Number(input); if (v > 0) onSetGoal(v); setEditing(false) }
+  function msg() {
     if (!goal) return "Defina sua meta abaixo"
     if (pct === 0) return "Bora começar! 💪"
-    if (pct < 25) return "Ótimo começo! 🔥"
     if (pct < 50) return "No caminho certo! 🚀"
-    if (pct < 75) return "Mais da metade! ⚡"
     if (pct < 100) return "Quase lá! 🎯"
     return "Meta atingida! 🎉"
   }
-
   return (
-    <div className="bg-white border border-border rounded-2xl shadow-sm px-4 py-3 flex flex-col gap-2 min-w-[160px]">
+    <div className="bg-white border border-border rounded-2xl shadow-sm px-4 py-3 flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          {reached
-            ? <Flame className="h-3.5 w-3.5 text-orange-500" />
-            : <Target className="h-3.5 w-3.5 text-primary" />}
-          <span className="text-xs font-semibold text-foreground">{label}</span>
+          {reached ? <Flame className="h-3.5 w-3.5 text-orange-500" /> : <Star className="h-3.5 w-3.5 text-primary" />}
+          <span className="text-xs font-semibold">{label}</span>
         </div>
-        <button onClick={() => { setInput(String(goal ?? "")); setEditing(v => !v) }}
-          className="p-1 rounded-md hover:bg-muted transition">
+        <button onClick={() => { setInput(String(goal ?? "")); setEditing(v => !v) }} className="p-1 rounded-md hover:bg-muted transition">
           <Pencil className="h-3 w-3 text-muted-foreground" />
         </button>
       </div>
-
       {editing ? (
         <div className="flex items-center gap-1">
           <span className="text-xs text-muted-foreground shrink-0">R$</span>
-          <input
-            autoFocus
-            type="number"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") commit() }}
-            className="flex-1 w-0 border border-primary/40 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
-            placeholder="Ex: 3000"
-          />
-          <button onClick={commit} className="p-1 rounded-md bg-primary text-white hover:bg-primary/90 transition">
-            <Check className="h-3 w-3" />
-          </button>
+          <input autoFocus type="number" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") commit() }}
+            className="flex-1 w-0 border border-primary/40 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" placeholder="Ex: 30000" />
+          <button onClick={commit} className="p-1 rounded-md bg-primary text-white hover:bg-primary/90 transition"><Check className="h-3 w-3" /></button>
         </div>
       ) : (
         <div>
           <div className="flex items-end justify-between mb-1">
-            <span className={cn("text-lg font-bold leading-none", reached ? "text-orange-500" : "text-foreground")}>
-              R$ {earned.toLocaleString("pt-BR")}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {goal ? `/ R$ ${goal.toLocaleString("pt-BR")}` : "sem meta"}
-            </span>
+            <span className={cn("text-lg font-bold leading-none", reached ? "text-orange-500" : "text-foreground")}>R$ {earned.toLocaleString("pt-BR")}</span>
+            <span className="text-xs text-muted-foreground">{goal ? `/ R$ ${goal.toLocaleString("pt-BR")}` : "sem meta"}</span>
           </div>
-          {/* Progress bar */}
           <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-            <div
-              className={cn("h-full rounded-full transition-all duration-500", reached ? "bg-orange-500" : "bg-primary")}
-              style={{ width: `${pct}%` }}
-            />
+            <div className={cn("h-full rounded-full transition-all duration-500", reached ? "bg-orange-500" : "bg-primary")} style={{ width: `${pct}%` }} />
           </div>
           <p className="text-[10px] text-muted-foreground mt-1">
-            {goal !== null && !reached && diff !== null
-              ? `Faltam R$ ${diff.toLocaleString("pt-BR")} · `
-              : ""}{motivational()}
+            {goal !== null && !reached && diff !== null ? `Faltam R$ ${diff.toLocaleString("pt-BR")} · ` : ""}{msg()}
           </p>
         </div>
       )}
@@ -202,20 +224,27 @@ function GoalCard({
 
 export default function DashboardPage() {
   const today = new Date()
+  const [activeTab, setActiveTab] = useState<DashTab>("overview")
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
-  const [events, setEvents] = useState<CalendarEvent[]>([])
+  const [calendarChoiceDay, setCalendarChoiceDay] = useState<number | null>(null)
+  const [events, setEvents] = useLocalStorage<CalendarEvent[]>("trampio:events", [])
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null)
   const [serviceFilter, setServiceFilter] = useState<"Semana" | "Mês">("Semana")
   const [showReport, setShowReport] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [profile, setProfile] = useState<UserProfile>(defaultProfile)
-  const [weekGoal, setWeekGoal] = useState<number | null>(null)
-  const [monthGoal, setMonthGoal] = useState<number | null>(null)
+  const [profile, setProfile] = useLocalStorage<UserProfile>("trampio:profile", defaultProfile)
+  const [monthGoal, setMonthGoal] = useLocalStorage<number | null>("trampio:monthGoal", null)
 
-  const [transactions, setTransactions] = useState<Transaction[]>([])
+  // Condominium stats (editable)
+  const [totalUnits, setTotalUnits] = useLocalStorage<number>("trampio:totalUnits", 48)
+  const [defaulters, setDefaulters] = useLocalStorage<number>("trampio:defaulters", 0)
+  const [editingCondo, setEditingCondo] = useState(false)
+  const [condoForm, setCondoForm] = useState({ totalUnits: 48, defaulters: 0 })
+
+  const [transactions, setTransactions] = useLocalStorage<Transaction[]>("trampio:transactions", [])
   const [showAddForm, setShowAddForm] = useState(false)
-  const [newTx, setNewTx] = useState<Omit<Transaction, "id">>({ type: "entrada", value: 0, date: "", description: "", category: "Serviço" })
+  const [newTx, setNewTx] = useState<Omit<Transaction, "id">>({ type: "entrada", value: 0, date: "", description: "", category: "Taxa de condomínio" })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTx, setEditTx] = useState<Partial<Transaction>>({})
 
@@ -230,34 +259,20 @@ export default function DashboardPage() {
 
   function saveEvent(ev: CalendarEvent) {
     setEvents(prev => prev.find(e => e.id === ev.id) ? prev.map(e => e.id === ev.id ? ev : e) : [...prev, ev])
-
-    // ── Auto-sync to financial ─────────────────────────────────────────────
     if ((ev.earnings ?? 0) > 0) {
       const txId = `ev-${ev.id}`
       const mm = String(ev.month + 1).padStart(2, "0")
       const dd = String(ev.day).padStart(2, "0")
       const txDate = `${ev.year}-${mm}-${dd}`
       const txType: TransactionType = ev.status === "Concluído" ? "entrada" : "a-receber"
-      const linked: Transaction = {
-        id: txId,
-        type: txType,
-        value: ev.earnings!,
-        date: txDate,
-        description: `📅 ${ev.title}${ev.client ? ` · ${ev.client}` : ""}`,
-        category: "Serviço",
-      }
-      setTransactions(prev =>
-        prev.find(t => t.id === txId)
-          ? prev.map(t => t.id === txId ? linked : t)
-          : [...prev, linked]
-      )
+      const linked: Transaction = { id: txId, type: txType, value: ev.earnings!, date: txDate, description: `📅 ${ev.title}${ev.client ? ` · ${ev.client}` : ""}`, category: "Taxa de condomínio" }
+      setTransactions(prev => prev.find(t => t.id === txId) ? prev.map(t => t.id === txId ? linked : t) : [...prev, linked])
     } else {
-      // Remove linked tx if value was cleared
       setTransactions(prev => prev.filter(t => t.id !== `ev-${ev.id}`))
     }
-
     setSelectedDay(null); setActiveEvent(null)
   }
+
   function deleteEvent(id: string) {
     setEvents(prev => prev.filter(e => e.id !== id))
     setTransactions(prev => prev.filter(t => t.id !== `ev-${id}`))
@@ -272,7 +287,7 @@ export default function DashboardPage() {
   function addTx() {
     if (!newTx.description || !newTx.date || newTx.value <= 0) return
     setTransactions(prev => [...prev, { ...newTx, id: crypto.randomUUID() }])
-    setNewTx({ type: "entrada", value: 0, date: "", description: "", category: "Serviço" })
+    setNewTx({ type: "entrada", value: 0, date: "", description: "", category: "Taxa de condomínio" })
     setShowAddForm(false)
   }
   function deleteTx(id: string) { setTransactions(prev => prev.filter(t => t.id !== id)) }
@@ -287,31 +302,18 @@ export default function DashboardPage() {
   const totalAReceber = transactions.filter(t => t.type === "a-receber").reduce((s, t) => s + t.value, 0)
   const saldo = totalEntradas - totalSaidas
 
-  // ── Goal computations ─────────────────────────────────────────────────────
-  // Events with earnings already auto-create linked "entrada" transactions via
-  // saveEvent(), so we only read from transactions to avoid double-counting.
-  const weekEarned = useMemo(() =>
-    transactions
-      .filter(t => t.type === "entrada")
-      .filter(t => { const d = new Date(t.date); return d >= wStart && d <= wEnd })
-      .reduce((s, t) => s + t.value, 0)
-    , [transactions, wStart, wEnd])
-
   const monthEarned = useMemo(() =>
-    transactions
-      .filter(t => t.type === "entrada")
-      .filter(t => { const [y, m] = t.date.split("-").map(Number); return y === today.getFullYear() && m - 1 === today.getMonth() })
-      .reduce((s, t) => s + t.value, 0)
+    transactions.filter(t => t.type === "entrada").filter(t => {
+      const [y, m] = t.date.split("-").map(Number); return y === today.getFullYear() && m - 1 === today.getMonth()
+    }).reduce((s, t) => s + t.value, 0)
     , [transactions])
 
   const sparklineData = useMemo(() => Array.from({ length: 12 }, (_, i) => {
     const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (11 - i))
     const [m, y] = [d.getMonth(), d.getFullYear()]
-    // Net balance per month: entradas minus saidas (a-receber excluded — pending)
-    return transactions
-      .filter(t => t.type !== "a-receber")
-      .filter(t => { const [ty, tm] = t.date.split("-").map(Number); return ty === y && tm - 1 === m })
-      .reduce((s, t) => s + (t.type === "entrada" ? t.value : -t.value), 0)
+    return transactions.filter(t => t.type !== "a-receber").filter(t => {
+      const [ty, tm] = t.date.split("-").map(Number); return ty === y && tm - 1 === m
+    }).reduce((s, t) => s + (t.type === "entrada" ? t.value : -t.value), 0)
   }), [transactions])
 
   const monthLabels = useMemo(() => Array.from({ length: 12 }, (_, i) => {
@@ -321,6 +323,14 @@ export default function DashboardPage() {
 
   const fmt = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
 
+  // Next meeting from events
+  const nextMeetingEvent = events
+    .filter(e => { const d = new Date(e.year, e.month, e.day); return d >= today })
+    .sort((a, b) => new Date(a.year, a.month, a.day).getTime() - new Date(b.year, b.month, b.day).getTime())[0]
+  const nextMeetingLabel = nextMeetingEvent
+    ? `${nextMeetingEvent.title} — ${nextMeetingEvent.day}/${nextMeetingEvent.month + 1}`
+    : null
+
   return (
     <div className="p-6 space-y-5 min-h-screen">
 
@@ -328,114 +338,32 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-3">
-            Olá, {profile.name.split(" ")[0]} 👋
-            <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-0.5">
-              <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-              <span className="text-xs font-semibold text-amber-700">4,9</span>
+            {profile.name.split(" ")[0]} — Painel do Síndico
+            <span className="inline-flex items-center gap-1 bg-primary/10 border border-primary/20 rounded-full px-2.5 py-0.5">
+              <Building2 className="h-3 w-3 text-primary" />
+              <span className="text-xs font-semibold text-primary">CNPJ</span>
             </span>
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Bem-vindo de volta ao seu painel</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Bem-vindo de volta ao seu painel de gestão</p>
         </div>
 
-        {/* ── Status, raio e % da meta mensal ── */}
-        <div className="flex items-stretch gap-3 flex-wrap">
-
-          {/* Raio de atuação */}
-          <div className="bg-white border border-border rounded-2xl shadow-sm px-4 py-2.5 flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-primary shrink-0" />
-            <div>
-              <p className="text-[10px] text-muted-foreground leading-none">Raio de atuação</p>
-              <p className="text-sm font-bold">
-                {profile.radiusKm} km{profile.city ? ` · ${profile.city}` : ""}
-              </p>
-            </div>
-          </div>
-
-          {/* Status */}
-          {(() => {
-            const opts = {
-              disponivel: { dot: "bg-green-500", label: "Disponível", bg: "bg-green-50 border-green-200", text: "text-green-700" },
-              ocupado: { dot: "bg-orange-500", label: "Ocupado", bg: "bg-orange-50 border-orange-200", text: "text-orange-700" },
-              ferias: { dot: "bg-blue-500", label: "De férias", bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
-            } as const
-            const s = opts[profile.availability]
-            return (
-              <button
-                onClick={() => setShowSettings(true)}
-                className={cn("flex items-center gap-2 rounded-2xl border px-4 py-2.5 shadow-sm transition hover:opacity-80", s.bg)}
-              >
-                <div className={cn("h-2 w-2 rounded-full shrink-0 animate-pulse", s.dot)} />
-                <span className={cn("text-xs font-semibold", s.text)}>{s.label}</span>
-              </button>
-            )
-          })()}
-
-          {/* % Meta mensal — ring */}
-          {(() => {
-            const pct = monthGoal && monthGoal > 0 ? Math.min(Math.round((monthEarned / monthGoal) * 100), 100) : null
-            const r = 16; const circ = 2 * Math.PI * r
-            const reached = pct !== null && pct >= 100
-            return (
-              <button
-                onClick={() => document.getElementById("goal-section")?.scrollIntoView({ behavior: "smooth" })}
-                className="bg-white border border-border rounded-2xl shadow-sm px-4 py-2.5 flex items-center gap-3 hover:bg-muted/30 transition"
-                title="Ver metas"
-              >
-                <svg width="40" height="40" className="-rotate-90">
-                  <circle cx="20" cy="20" r={r} fill="none" stroke="#E2E8F0" strokeWidth="4" />
-                  <circle cx="20" cy="20" r={r} fill="none"
-                    stroke={reached ? "#f97316" : "#FF6B2C"}
-                    strokeWidth="4"
-                    strokeDasharray={circ}
-                    strokeDashoffset={pct !== null ? circ - (pct / 100) * circ : circ}
-                    strokeLinecap="round"
-                    className="transition-all duration-700"
-                  />
-                  <text x="20" y="-14" textAnchor="middle" className="fill-foreground" fontSize="8" fontWeight="700"
-                    style={{ transform: "rotate(90deg)", transformOrigin: "20px 20px" }}>
-                    {pct !== null ? `${pct}%` : "meta"}
-                  </text>
-                </svg>
-                <div>
-                  <p className="text-[10px] text-muted-foreground leading-none">Meta mensal</p>
-                  <p className="text-xs font-bold">
-                    {pct !== null
-                      ? reached ? "🎉 Atingida!" : `${pct}% concluído`
-                      : "Definir meta"}
-                  </p>
-                </div>
-              </button>
-            )
-          })()}
-        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Link href="/dashboard/search" className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-border bg-white text-sm font-medium hover:bg-muted transition shadow-sm">
             <Search className="h-4 w-4 text-primary" />
-            <span className="hidden sm:inline">Buscar Serviço</span>
+            <span className="hidden sm:inline">Buscar</span>
           </Link>
           <button onClick={() => setShowReport(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary text-white text-sm font-medium hover:bg-primary/90 transition shadow-sm">
             <FileText className="h-4 w-4" />
             <span className="hidden sm:inline">Exportar Relatório</span>
           </button>
-
-          {/* Notifications */}
-          <Link
-            href="/chat"
-            className="relative flex items-center justify-center h-10 w-10 rounded-full border border-border bg-white shadow-sm hover:bg-muted transition"
-            title="Chat"
-          >
+          <Link href="/chat" className="relative flex items-center justify-center h-10 w-10 rounded-full border border-border bg-white shadow-sm hover:bg-muted transition" title="Chat">
             <MessageCircle className="h-5 w-5 text-muted-foreground" />
             <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary border-2 border-white" />
           </Link>
-          <button
-            className="relative flex items-center justify-center h-10 w-10 rounded-full border border-border bg-white shadow-sm hover:bg-muted transition"
-            title="Notificações"
-          >
+          <button className="relative flex items-center justify-center h-10 w-10 rounded-full border border-border bg-white shadow-sm hover:bg-muted transition" title="Notificações">
             <Bell className="h-5 w-5 text-muted-foreground" />
             <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-white" />
           </button>
-
-          {/* Settings + User chip */}
           <div className="flex items-center gap-2 bg-white border border-border rounded-full px-3 py-2 shadow-sm">
             {profile.avatar
               ? <img src={profile.avatar} alt="avatar" className="h-8 w-8 rounded-full object-cover shrink-0" />
@@ -445,255 +373,357 @@ export default function DashboardPage() {
               <p className="text-xs font-semibold leading-none">{profile.name}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{profile.email}</p>
             </div>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="ml-1 p-1.5 rounded-full hover:bg-muted transition"
-              title="Configurações"
-            >
+            <button onClick={() => setShowSettings(true)} className="ml-1 p-1.5 rounded-full hover:bg-muted transition" title="Configurações">
               <Settings className="h-4 w-4 text-muted-foreground hover:text-primary transition" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* ── Row 1: Calendário + Serviços ────────────────────────────── */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
-
-        {/* CALENDÁRIO */}
-        <div className="bg-white rounded-2xl border border-border shadow-sm p-5 lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-sm font-semibold">Agenda</span>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="p-1.5 rounded-lg hover:bg-muted transition">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="text-sm font-medium capitalize w-44 text-center">
-                {currentMonth.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
-              </span>
-              <button onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="p-1.5 rounded-lg hover:bg-muted transition">
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center text-xs">
-            {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(d => (
-              <div key={d} className="py-1.5 font-semibold text-muted-foreground text-[11px]">{d}</div>
-            ))}
-            {calendarDays.map((day, idx) => {
-              if (!day) return <div key={idx} />
-              const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear()
-              const hasEvent = events.some(e => e.day === day && e.month === month && e.year === year)
-              return (
-                <button key={idx} onClick={() => setSelectedDay(day)}
-                  className={cn("h-9 w-9 mx-auto rounded-full text-sm transition font-medium flex items-center justify-center",
-                    hasEvent ? "bg-primary text-white shadow-sm" : "",
-                    isToday && !hasEvent ? "bg-primary/15 text-primary font-bold ring-2 ring-primary/30" : "",
-                    !isToday && !hasEvent ? "hover:bg-muted" : "")}>
-                  {day}
-                </button>
-              )
-            })}
-          </div>
-          <p className="text-xs text-muted-foreground mt-4 pt-3 border-t border-border">
-            Clique em um dia para adicionar um serviço ou compromisso.
-          </p>
-        </div>
-
-        {/* SERVIÇOS */}
-        <div className="bg-white rounded-2xl border border-border shadow-sm p-5 flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-sm font-semibold">Serviços</span>
-            <div className="flex bg-muted rounded-lg p-0.5">
-              {(["Semana", "Mês"] as const).map(f => (
-                <button key={f} onClick={() => setServiceFilter(f)}
-                  className={cn("px-3 py-1 rounded-md text-xs font-medium transition",
-                    serviceFilter === f ? "bg-white shadow-sm text-foreground" : "text-muted-foreground")}>
-                  {f}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="overflow-y-auto" style={{ maxHeight: 300 }}>
-            {displayServices.length === 0
-              ? (
-                <div className="h-32 flex flex-col items-center justify-center text-center">
-                  <p className="text-sm text-muted-foreground">Nenhum serviço neste período.</p>
-                  <p className="text-xs text-muted-foreground mt-1">Adicione no calendário ao lado.</p>
-                </div>
-              ) : (
-                <div className="space-y-3 pr-1">
-                  {[...displayServices]
-                    .sort((a, b) => new Date(a.year, a.month, a.day).getTime() - new Date(b.year, b.month, b.day).getTime())
-                    .map(e => (
-                      <div key={e.id} onClick={() => setActiveEvent(e)}
-                        className="flex items-start gap-3 pb-3 border-b border-border last:border-0 last:pb-0 cursor-pointer hover:bg-muted/30 -mx-1 px-1 rounded-lg transition">
-                        <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                          {e.title.charAt(0)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{e.title}</p>
-                          <p className="text-xs text-muted-foreground">{e.client || "—"} · {e.day}/{e.month + 1}</p>
-                          <StatusBadge status={e.status || "Agendado"} />
-                        </div>
-                        <p className="text-sm font-bold shrink-0">{e.earnings ? `R$ ${e.earnings.toLocaleString("pt-BR")}` : "—"}</p>
-                      </div>
-                    ))}
-                </div>
-              )}
-          </div>
-        </div>
+      {/* ── Tab Navigation ───────────────────────────────────────────── */}
+      <div className="flex gap-1 bg-muted/40 rounded-2xl p-1.5 border border-border">
+        {TABS.map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition",
+              activeTab === tab.id
+                ? "bg-white shadow-sm text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/50"
+            )}>
+            <tab.Icon className="h-4 w-4 shrink-0" />
+            <span className="hidden sm:inline">{tab.label}</span>
+          </button>
+        ))}
       </div>
 
-      {/* ── Row 2: Gráfico + Financeiro ─────────────────────────────── */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
+      {/* ── Tab: Visão Geral ─────────────────────────────────────────── */}
+      {activeTab === "overview" && (
+        <div className="space-y-5">
 
-        {/* GRÁFICO */}
-        <div className="bg-white rounded-2xl border border-border shadow-sm p-5 lg:col-span-2">
-          <div className="flex items-start justify-between mb-2">
-            <div>
-              <span className="text-sm font-semibold">Fluxo de Caixa</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className={cn("text-3xl font-bold", saldo >= 0 ? "text-foreground" : "text-red-600")}>
-                  {saldo >= 0 ? "" : "-"}{fmt(Math.abs(saldo))}
-                </span>
-                <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full",
-                  saldo >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
-                  {saldo >= 0 ? "Saldo positivo" : "Saldo negativo"}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground">Saldo líquido (entradas − saídas)</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-muted-foreground">Receita bruta</p>
-              <p className="text-xl font-bold text-green-600">{fmt(totalEntradas)}</p>
-            </div>
-          </div>
-          <Sparkline data={sparklineData} />
-          <div className="flex mt-1">
-            {monthLabels.map((l, i) => (
-              <div key={i} className="flex-1 text-center text-[10px] text-muted-foreground">{l}</div>
-            ))}
-          </div>
-          <div className="mt-4 pt-4 border-t border-border grid grid-cols-3 gap-3">
-            {([
-              { dot: "bg-green-500", label: "Entradas", v: totalEntradas, cl: "text-green-600" },
-              { dot: "bg-red-500", label: "Saídas", v: totalSaidas, cl: "text-red-600" },
-              { dot: "bg-amber-400", label: "A receber", v: totalAReceber, cl: "text-amber-600" },
-            ] as const).map(item => (
-              <div key={item.label} className="flex items-center gap-2">
-                <div className={cn("h-2.5 w-2.5 rounded-full shrink-0", item.dot)} />
-                <div>
-                  <p className="text-[10px] text-muted-foreground">{item.label}</p>
-                  <p className={cn("text-sm font-bold", item.cl)}>{fmt(item.v)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* CONTROLE FINANCEIRO */}
-        <div className="bg-white rounded-2xl border border-border shadow-sm p-5 flex flex-col gap-3">
+          {/* Condominium summary cards */}
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold">Financeiro</span>
-            <button onClick={() => { setShowAddForm(v => !v); setEditingId(null) }}
-              className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary/90 transition">
-              {showAddForm ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-              {showAddForm ? "Cancelar" : "Adicionar"}
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Resumo do Condomínio</h2>
+            <button onClick={() => { setCondoForm({ totalUnits, defaulters }); setEditingCondo(true) }}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition">
+              <Pencil className="h-3 w-3" /> Editar
             </button>
           </div>
+          <CondoSummaryCards totalUnits={totalUnits} defaulters={defaulters} nextMeeting={nextMeetingLabel} />
 
-          {/* ADD FORM */}
-          {showAddForm && (
-            <div className="p-3 bg-muted/40 rounded-xl space-y-2 border border-border">
-              <TxTypeToggle value={newTx.type} onChange={t => setNewTx(p => ({ ...p, type: t, category: "Serviço" }))} />
-              {newTx.type === "saida" && (
-                <select value={newTx.category} onChange={e => setNewTx(p => ({ ...p, category: e.target.value }))}
-                  className="w-full border border-border rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary/30">
-                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                </select>
-              )}
-              <input type="number" placeholder="Valor (R$)" value={newTx.value || ""}
-                onChange={e => setNewTx(p => ({ ...p, value: Number(e.target.value) }))}
-                className="w-full border border-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" />
-              <input type="date" value={newTx.date} onChange={e => setNewTx(p => ({ ...p, date: e.target.value }))}
-                className="w-full border border-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" />
-              <input placeholder="Descrição" value={newTx.description} onChange={e => setNewTx(p => ({ ...p, description: e.target.value }))}
-                className="w-full border border-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" />
-              <button onClick={addTx} className="w-full py-2 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary/90 transition">
-                Salvar
-              </button>
-            </div>
-          )}
-
-          {/* LIST */}
-          <div className="overflow-y-auto space-y-2 pr-0.5" style={{ maxHeight: showAddForm ? 160 : 290 }}>
-            {transactions.length === 0 && (
-              <div className="py-8 text-center">
-                <p className="text-xs text-muted-foreground">Nenhum lançamento ainda.</p>
-                <p className="text-xs text-muted-foreground">Clique em "Adicionar" para começar.</p>
-              </div>
-            )}
-            {[...transactions].reverse().map(tx => {
-              const c = TX_COLORS[tx.type]
-
-              if (editingId === tx.id) {
-                return (
-                  <div key={tx.id} className="rounded-xl border border-primary/30 p-2.5 space-y-1.5 bg-white">
-                    <TxTypeToggle value={(editTx.type ?? tx.type) as TransactionType} onChange={t => setEditTx(p => ({ ...p, type: t }))} />
-                    {(editTx.type ?? tx.type) === "saida" && (
-                      <select value={editTx.category ?? tx.category} onChange={e => setEditTx(p => ({ ...p, category: e.target.value }))}
-                        className="w-full border border-border rounded px-2 py-1 text-[10px] bg-white focus:outline-none">
-                        {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                      </select>
-                    )}
-                    <input type="number" value={editTx.value ?? tx.value} onChange={e => setEditTx(p => ({ ...p, value: Number(e.target.value) }))}
-                      className="w-full border border-border rounded px-2 py-1 text-[10px] focus:outline-none" placeholder="Valor" />
-                    <input type="date" value={editTx.date ?? tx.date} onChange={e => setEditTx(p => ({ ...p, date: e.target.value }))}
-                      className="w-full border border-border rounded px-2 py-1 text-[10px] focus:outline-none" />
-                    <input value={editTx.description ?? tx.description} onChange={e => setEditTx(p => ({ ...p, description: e.target.value }))}
-                      className="w-full border border-border rounded px-2 py-1 text-[10px] focus:outline-none" placeholder="Descrição" />
-                    <div className="flex gap-1">
-                      <button onClick={() => setEditingId(null)} className="flex-1 py-1 rounded border border-border text-[10px] hover:bg-muted transition">Cancelar</button>
-                      <button onClick={saveEdit} className="flex-1 py-1 rounded bg-primary text-white text-[10px] font-semibold flex items-center justify-center gap-1">
-                        <Check className="h-3 w-3" /> Salvar
-                      </button>
-                    </div>
-                  </div>
-                )
-              }
-
-              return (
-                <div key={tx.id} className={cn("flex items-center gap-2 rounded-xl px-3 py-2 border", c.bg)}>
-                  <div className={cn("h-2 w-2 rounded-full shrink-0", c.dot)} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate">{tx.description}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {formatDate(tx.date)}{tx.category && tx.category !== "Serviço" ? ` · ${tx.category}` : ""}
-                    </p>
-                  </div>
-                  <p className={cn("text-xs font-bold shrink-0", c.value)}>
-                    {tx.type === "saida" ? "-" : "+"}R$ {tx.value.toLocaleString("pt-BR")}
-                  </p>
-                  <button onClick={() => startEdit(tx)} className="text-muted-foreground hover:text-primary transition shrink-0">
-                    <Pencil className="h-3 w-3" />
+          {/* Calendário + Compromissos */}
+          <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
+            {/* CALENDÁRIO */}
+            <div className="bg-white rounded-2xl border border-border shadow-sm p-5 lg:col-span-2">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-sm font-semibold">Agenda do Condomínio</span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="p-1.5 rounded-lg hover:bg-muted transition">
+                    <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <button onClick={() => deleteTx(tx.id)} className="text-muted-foreground hover:text-red-500 transition shrink-0">
-                    <X className="h-3 w-3" />
+                  <span className="text-sm font-medium capitalize w-44 text-center">
+                    {currentMonth.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+                  </span>
+                  <button onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="p-1.5 rounded-lg hover:bg-muted transition">
+                    <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
-              )
-            })}
+              </div>
+              <div className="grid grid-cols-7 gap-1 text-center text-xs">
+                {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(d => (
+                  <div key={d} className="py-1.5 font-semibold text-muted-foreground text-[11px]">{d}</div>
+                ))}
+                {calendarDays.map((day, idx) => {
+                  if (!day) return <div key={idx} />
+                  const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear()
+                  const hasEvent = events.some(e => e.day === day && e.month === month && e.year === year)
+                  return (
+                    <button key={idx} onClick={() => setCalendarChoiceDay(day)}
+                      className={cn("h-9 w-9 mx-auto rounded-full text-sm transition font-medium flex items-center justify-center",
+                        hasEvent ? "bg-primary text-white shadow-sm" : "",
+                        isToday && !hasEvent ? "bg-primary/15 text-primary font-bold ring-2 ring-primary/30" : "",
+                        !isToday && !hasEvent ? "hover:bg-muted" : "")}>
+                      {day}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground mt-4 pt-3 border-t border-border">
+                Clique em um dia para adicionar um compromisso ou reunião.
+              </p>
+            </div>
+
+            {/* COMPROMISSOS */}
+            <div className="bg-white rounded-2xl border border-border shadow-sm p-5 flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-sm font-semibold">Compromissos</span>
+                <div className="flex bg-muted rounded-lg p-0.5">
+                  {(["Semana", "Mês"] as const).map(f => (
+                    <button key={f} onClick={() => setServiceFilter(f)}
+                      className={cn("px-3 py-1 rounded-md text-xs font-medium transition",
+                        serviceFilter === f ? "bg-white shadow-sm text-foreground" : "text-muted-foreground")}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="overflow-y-auto" style={{ maxHeight: 300 }}>
+                {displayServices.length === 0
+                  ? (
+                    <div className="h-32 flex flex-col items-center justify-center text-center">
+                      <p className="text-sm text-muted-foreground">Nenhum compromisso neste período.</p>
+                      <p className="text-xs text-muted-foreground mt-1">Adicione no calendário ao lado.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pr-1">
+                      {[...displayServices]
+                        .sort((a, b) => new Date(a.year, a.month, a.day).getTime() - new Date(b.year, b.month, b.day).getTime())
+                        .map(e => (
+                          <div key={e.id} onClick={() => setActiveEvent(e)}
+                            className="flex items-start gap-3 pb-3 border-b border-border last:border-0 last:pb-0 cursor-pointer hover:bg-muted/30 -mx-1 px-1 rounded-lg transition">
+                            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                              {e.title.charAt(0)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{e.title}</p>
+                              <p className="text-xs text-muted-foreground">{e.client || "—"} · {e.day}/{e.month + 1}</p>
+                              <StatusBadge status={e.status || "Agendado"} />
+                            </div>
+                            <p className="text-sm font-bold shrink-0">{e.earnings ? `R$ ${e.earnings.toLocaleString("pt-BR")}` : "—"}</p>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+              </div>
+            </div>
+          </div>
+
+          {/* Gráfico + Financeiro */}
+          <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
+            {/* GRÁFICO */}
+            <div className="bg-white rounded-2xl border border-border shadow-sm p-5 lg:col-span-2">
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <span className="text-sm font-semibold">Fluxo de Caixa</span>
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span className={cn("text-3xl font-bold", saldo >= 0 ? "text-foreground" : "text-red-600")}>
+                      {saldo >= 0 ? "" : "-"}{fmt(Math.abs(saldo))}
+                    </span>
+                    <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full",
+                      saldo >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                      {saldo >= 0 ? "Saldo positivo" : "Saldo negativo"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Saldo líquido (entradas − saídas)</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground">Receita bruta</p>
+                  <p className="text-xl font-bold text-green-600">{fmt(totalEntradas)}</p>
+                </div>
+              </div>
+              <Sparkline data={sparklineData} />
+              <div className="flex mt-1">
+                {monthLabels.map((l, i) => (
+                  <div key={i} className="flex-1 text-center text-[10px] text-muted-foreground">{l}</div>
+                ))}
+              </div>
+              <div className="mt-4 pt-4 border-t border-border grid grid-cols-3 gap-3">
+                {([
+                  { dot: "bg-green-500", label: "Entradas", v: totalEntradas, cl: "text-green-600" },
+                  { dot: "bg-red-500", label: "Saídas", v: totalSaidas, cl: "text-red-600" },
+                  { dot: "bg-amber-400", label: "A receber", v: totalAReceber, cl: "text-amber-600" },
+                ] as const).map(item => (
+                  <div key={item.label} className="flex items-center gap-2">
+                    <div className={cn("h-2.5 w-2.5 rounded-full shrink-0", item.dot)} />
+                    <div>
+                      <p className="text-[10px] text-muted-foreground">{item.label}</p>
+                      <p className={cn("text-sm font-bold", item.cl)}>{fmt(item.v)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* CONTROLE FINANCEIRO */}
+            <div className="bg-white rounded-2xl border border-border shadow-sm p-5 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold">Financeiro</span>
+                <button onClick={() => { setShowAddForm(v => !v); setEditingId(null) }}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary/90 transition">
+                  {showAddForm ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                  {showAddForm ? "Cancelar" : "Adicionar"}
+                </button>
+              </div>
+
+              {showAddForm && (
+                <div className="p-3 bg-muted/40 rounded-xl space-y-2 border border-border">
+                  <TxTypeToggle value={newTx.type} onChange={t => setNewTx(p => ({ ...p, type: t, category: "Taxa de condomínio" }))} />
+                  <select value={newTx.category} onChange={e => setNewTx(p => ({ ...p, category: e.target.value }))}
+                    className="w-full border border-border rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary/30">
+                    {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                  <input type="number" placeholder="Valor (R$)" value={newTx.value || ""}
+                    onChange={e => setNewTx(p => ({ ...p, value: Number(e.target.value) }))}
+                    className="w-full border border-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                  <input type="date" value={newTx.date} onChange={e => setNewTx(p => ({ ...p, date: e.target.value }))}
+                    className="w-full border border-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                  <input placeholder="Descrição" value={newTx.description} onChange={e => setNewTx(p => ({ ...p, description: e.target.value }))}
+                    className="w-full border border-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                  <button onClick={addTx} className="w-full py-2 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary/90 transition">
+                    Salvar
+                  </button>
+                </div>
+              )}
+
+              <div className="overflow-y-auto space-y-2 pr-0.5" style={{ maxHeight: showAddForm ? 160 : 290 }}>
+                {transactions.length === 0 && (
+                  <div className="py-8 text-center">
+                    <p className="text-xs text-muted-foreground">Nenhum lançamento ainda.</p>
+                    <p className="text-xs text-muted-foreground">Clique em "Adicionar" para começar.</p>
+                  </div>
+                )}
+                {[...transactions].reverse().map(tx => {
+                  const c = TX_COLORS[tx.type]
+                  if (editingId === tx.id) {
+                    return (
+                      <div key={tx.id} className="rounded-xl border border-primary/30 p-2.5 space-y-1.5 bg-white">
+                        <TxTypeToggle value={(editTx.type ?? tx.type) as TransactionType} onChange={t => setEditTx(p => ({ ...p, type: t }))} />
+                        <select value={editTx.category ?? tx.category} onChange={e => setEditTx(p => ({ ...p, category: e.target.value }))}
+                          className="w-full border border-border rounded px-2 py-1 text-[10px] bg-white focus:outline-none">
+                          {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                        </select>
+                        <input type="number" value={editTx.value ?? tx.value} onChange={e => setEditTx(p => ({ ...p, value: Number(e.target.value) }))}
+                          className="w-full border border-border rounded px-2 py-1 text-[10px] focus:outline-none" placeholder="Valor" />
+                        <input type="date" value={editTx.date ?? tx.date} onChange={e => setEditTx(p => ({ ...p, date: e.target.value }))}
+                          className="w-full border border-border rounded px-2 py-1 text-[10px] focus:outline-none" />
+                        <input value={editTx.description ?? tx.description} onChange={e => setEditTx(p => ({ ...p, description: e.target.value }))}
+                          className="w-full border border-border rounded px-2 py-1 text-[10px] focus:outline-none" placeholder="Descrição" />
+                        <div className="flex gap-1">
+                          <button onClick={() => setEditingId(null)} className="flex-1 py-1 rounded border border-border text-[10px] hover:bg-muted transition">Cancelar</button>
+                          <button onClick={saveEdit} className="flex-1 py-1 rounded bg-primary text-white text-[10px] font-semibold flex items-center justify-center gap-1">
+                            <Check className="h-3 w-3" /> Salvar
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div key={tx.id} className={cn("flex items-center gap-2 rounded-xl px-3 py-2 border", c.bg)}>
+                      <div className={cn("h-2 w-2 rounded-full shrink-0", c.dot)} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{tx.description}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {formatDate(tx.date)}{tx.category && tx.category !== "Taxa de condomínio" ? ` · ${tx.category}` : ""}
+                        </p>
+                      </div>
+                      <p className={cn("text-xs font-bold shrink-0", c.value)}>
+                        {tx.type === "saida" ? "-" : "+"}R$ {tx.value.toLocaleString("pt-BR")}
+                      </p>
+                      <button onClick={() => startEdit(tx)} className="text-muted-foreground hover:text-primary transition shrink-0">
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button onClick={() => deleteTx(tx.id)} className="text-muted-foreground hover:text-red-500 transition shrink-0">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Meta de arrecadação mensal */}
+          <div id="goal-section" className="max-w-sm">
+            <GoalCard label="Arrecadação Mensal" goal={monthGoal} earned={monthEarned} onSetGoal={setMonthGoal} />
           </div>
         </div>
-      </div>
+      )}
 
-      {/* ── Row 3: Metas ───────────────────────────────────────────── */}
-      <div id="goal-section" className="grid gap-4 grid-cols-1 sm:grid-cols-2">
-        <GoalCard label="Meta Semanal" goal={weekGoal} earned={weekEarned} onSetGoal={setWeekGoal} />
-        <GoalCard label="Meta Mensal" goal={monthGoal} earned={monthEarned} onSetGoal={setMonthGoal} />
-      </div>
+      {/* ── Tab: Reuniões ────────────────────────────────────────────── */}
+      {activeTab === "meetings" && <MeetingsTab />}
 
-      {/* ── Modals ──────────────────────────────────────────────────── */}
+      {/* ── Tab: Documentos ──────────────────────────────────────────── */}
+      {activeTab === "documents" && <DocumentsTab />}
+
+      {/* ── Tab: Comunicados ─────────────────────────────────────────── */}
+      {activeTab === "announcements" && <AnnouncementsTab />}
+
+      {/* ── Tab: Votações ────────────────────────────────────────────── */}
+      {activeTab === "votings" && <VotingsTab />}
+
+      {/* ── Tab: Prestadores ─────────────────────────────────────────── */}
+      {activeTab === "providers" && <ProvidersTab />}
+
+      {/* ── Calendar Choice Modal ────────────────────────────────────── */}
+      {calendarChoiceDay !== null && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-xs rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-primary to-primary/80 px-5 py-4 flex items-center justify-between">
+              <h2 className="font-semibold text-white">O que deseja agendar?</h2>
+              <button onClick={() => setCalendarChoiceDay(null)} className="text-white/80 hover:text-white"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="text-xs text-muted-foreground px-5 pt-4 pb-1">
+              Dia {calendarChoiceDay}/{month + 1}/{year}
+            </p>
+            <div className="p-5 flex flex-col gap-3">
+              <button
+                onClick={() => { setSelectedDay(calendarChoiceDay); setCalendarChoiceDay(null) }}
+                className="flex items-center gap-3 w-full p-4 rounded-xl border-2 border-primary/20 hover:border-primary hover:bg-primary/5 transition text-left">
+                <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                  <Calendar className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">Compromisso</p>
+                  <p className="text-xs text-muted-foreground">Manutenção, visita técnica, etc.</p>
+                </div>
+              </button>
+              <button
+                onClick={() => { setActiveTab("meetings"); setCalendarChoiceDay(null) }}
+                className="flex items-center gap-3 w-full p-4 rounded-xl border-2 border-primary/20 hover:border-primary hover:bg-primary/5 transition text-left">
+                <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">Reunião</p>
+                  <p className="text-xs text-muted-foreground">Ordinária, extraordinária, assembleia.</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Condominium Edit Modal ───────────────────────────────────── */}
+      {editingCondo && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-xs rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-primary to-primary/80 px-5 py-4 flex items-center justify-between">
+              <h2 className="font-semibold text-white">Dados do Condomínio</h2>
+              <button onClick={() => setEditingCondo(false)} className="text-white/80 hover:text-white"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Total de Unidades</label>
+                <input type="number" value={condoForm.totalUnits} onChange={e => setCondoForm(p => ({ ...p, totalUnits: Number(e.target.value) }))}
+                  className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Inadimplentes</label>
+                <input type="number" value={condoForm.defaulters} onChange={e => setCondoForm(p => ({ ...p, defaulters: Number(e.target.value) }))}
+                  className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setEditingCondo(false)} className="flex-1 py-2 rounded-xl border border-border text-sm hover:bg-muted transition">Cancelar</button>
+                <button onClick={() => { setTotalUnits(condoForm.totalUnits); setDefaulters(condoForm.defaulters); setEditingCondo(false) }}
+                  className="flex-1 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition flex items-center justify-center gap-1.5">
+                  <Check className="h-4 w-4" /> Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Event Modal ──────────────────────────────────────────────── */}
       {(selectedDay !== null || activeEvent) && (
         <EventModal
           day={activeEvent?.day ?? selectedDay!}
@@ -705,21 +735,12 @@ export default function DashboardPage() {
           onDelete={deleteEvent}
         />
       )}
+
       {showReport && (
-        <ReportModal
-          events={events}
-          transactions={transactions}
-          month={month}
-          year={year}
-          onClose={() => setShowReport(false)}
-        />
+        <ReportModal events={events} transactions={transactions} month={month} year={year} onClose={() => setShowReport(false)} />
       )}
       {showSettings && (
-        <SettingsModal
-          profile={profile}
-          onSave={p => { setProfile(p); setShowSettings(false) }}
-          onClose={() => setShowSettings(false)}
-        />
+        <SettingsModal profile={profile} onSave={p => { setProfile(p); setShowSettings(false) }} onClose={() => setShowSettings(false)} />
       )}
     </div>
   )
@@ -753,16 +774,16 @@ function EventModal({ day, month, year, event, onClose, onSave, onDelete }: {
       <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
         <div className="bg-gradient-to-r from-primary to-primary/80 px-6 py-4">
           <h2 className="font-semibold text-white text-lg">
-            {event ? "Editar Serviço" : `Novo Serviço — ${day}/${month + 1}/${year}`}
+            {event ? "Editar Compromisso" : `Novo Compromisso — ${day}/${month + 1}/${year}`}
           </h2>
         </div>
         <div className="p-6 space-y-3 max-h-[80vh] overflow-y-auto">
           <input className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-            placeholder="Título do serviço *" value={title} onChange={e => setTitle(e.target.value)} />
+            placeholder="Título *" value={title} onChange={e => setTitle(e.target.value)} />
           <input className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-            placeholder="Nome do cliente" value={client} onChange={e => setClient(e.target.value)} />
+            placeholder="Participante / responsável" value={client} onChange={e => setClient(e.target.value)} />
           <input type="number" className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-            placeholder="Valor do serviço (R$)" value={earnings || ""} onChange={e => setEarnings(Number(e.target.value))} />
+            placeholder="Valor (R$) se aplicável" value={earnings || ""} onChange={e => setEarnings(Number(e.target.value))} />
           <div className="flex gap-1">
             {(["Agendado", "Em andamento", "Concluído"] as const).map(s => (
               <button key={s} onClick={() => setStatus(s)}
@@ -798,7 +819,9 @@ function EventModal({ day, month, year, event, onClose, onSave, onDelete }: {
             )}
             <div className="flex gap-2 ml-auto">
               <button onClick={onClose} className="px-4 py-2 rounded-xl border border-border text-sm hover:bg-muted transition">Cancelar</button>
-              <button onClick={handleSave} className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition">Salvar</button>
+              <button onClick={handleSave} className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition flex items-center gap-1.5">
+                <Check className="h-4 w-4" /> Salvar
+              </button>
             </div>
           </div>
         </div>

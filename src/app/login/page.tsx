@@ -50,7 +50,7 @@ export default function LoginPage() {
     const handleLogin = (e: React.FormEvent) => {
         e.preventDefault();
         if (userType === "provider") {
-            router.push("/dashboard");
+            router.push("/dashboard/provider");
         } else if (userType === "client" && documentType === "cnpj") {
             router.push("/dashboard");
         } else {
