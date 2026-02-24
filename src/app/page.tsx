@@ -1,5 +1,8 @@
-import Link from "next/link";
+"use client";
+
 import Image from "next/image";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import {
   CheckCircle2,
   Search,
@@ -10,11 +13,103 @@ import {
   Users,
   Shield,
   Briefcase,
+  X,
 } from "lucide-react";
 
+// ── Account-check popup ─────────────────────────────────
+function AccountCheckPopup({
+  destinationType,
+  onClose,
+}: {
+  // "client" → login goes to /login, register goes to /register
+  // "professional" → login goes to /login, register goes to /register?type=professional
+  destinationType: "client" | "professional";
+  onClose: () => void;
+}) {
+  const router = useRouter();
+
+  const handleYes = () => {
+    onClose();
+    router.push("/login");
+  };
+
+  const handleNo = () => {
+    onClose();
+    if (destinationType === "professional") {
+      router.push("/register?type=professional");
+    } else {
+      router.push("/register");
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="relative w-full max-w-sm rounded-2xl bg-white border border-border shadow-2xl p-7 animate-in fade-in zoom-in-95 duration-150">
+        {/* Close */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 rounded-lg p-1 text-muted-foreground hover:bg-muted transition"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        <div className="text-center mb-7">
+          <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+            {destinationType === "professional" ? (
+              <Briefcase className="h-6 w-6 text-primary" />
+            ) : (
+              <Search className="h-6 w-6 text-primary" />
+            )}
+          </div>
+          <h2 className="text-lg font-bold mb-1">
+            {destinationType === "professional"
+              ? "Quer oferecer serviços?"
+              : "Quer contratar um serviço?"}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Você já tem uma conta na Trampio?
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={handleYes}
+            className="py-3 rounded-xl border-2 border-primary bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition"
+          >
+            Sim, tenho conta
+          </button>
+          <button
+            onClick={handleNo}
+            className="py-3 rounded-xl border-2 border-border text-sm font-semibold hover:border-primary hover:text-primary transition"
+          >
+            Não, quero me cadastrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Home ────────────────────────────────────────────────
 export default function Home() {
+  const router = useRouter();
+  const [popup, setPopup] = useState<"client" | "professional" | null>(null);
+
   return (
     <div className="flex flex-col min-h-screen w-full overflow-x-hidden">
+
+      {/* Account-check popup */}
+      {popup && (
+        <AccountCheckPopup
+          destinationType={popup}
+          onClose={() => setPopup(null)}
+        />
+      )}
 
       {/* HERO */}
       <section className="pt-20 pb-28 w-full">
@@ -42,19 +137,21 @@ export default function Home() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link
-                href="/search"
+              {/* Quero contratar → popup */}
+              <button
+                onClick={() => setPopup("client")}
                 className="px-8 py-4 bg-primary text-white rounded-lg font-semibold hover:opacity-90 transition"
               >
                 Quero contratar
-              </Link>
+              </button>
 
-              <Link
-                href="/register?type=professional"
+              {/* Quero trabalhar → popup */}
+              <button
+                onClick={() => setPopup("professional")}
                 className="px-8 py-4 border border-border rounded-lg font-semibold hover:bg-muted transition"
               >
                 Quero trabalhar
-              </Link>
+              </button>
             </div>
 
           </div>
@@ -219,19 +316,21 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              href="/search"
+            {/* Contratar um serviço → popup */}
+            <button
+              onClick={() => setPopup("client")}
               className="px-8 py-4 bg-white text-primary rounded-lg font-semibold hover:opacity-90 transition"
             >
               Contratar um serviço
-            </Link>
+            </button>
 
-            <Link
-              href="/register?type=professional"
+            {/* Criar perfil profissional → cadastro direto */}
+            <button
+              onClick={() => router.push("/register?type=professional")}
               className="px-8 py-4 border border-white rounded-lg font-semibold hover:bg-white/10 transition"
             >
               Criar perfil profissional
-            </Link>
+            </button>
           </div>
         </div>
       </section>

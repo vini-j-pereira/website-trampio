@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, User, Briefcase, ArrowRight, CreditCard, Building2, Loader2 } from "lucide-react";
+import { ArrowLeft, User, Briefcase, ArrowRight, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { loginThunk, clearError, selectAuth } from "@/store/slices/authSlice";
 
 type UserType = "client" | "provider" | null;
-type DocumentType = "cpf" | "cnpj" | null;
-type Step = 1 | 1.5 | 2;
+type Step = 1 | 2;
 
 export default function LoginPage() {
     const router = useRouter();
@@ -18,7 +17,6 @@ export default function LoginPage() {
 
     const [step, setStep] = useState<Step>(1);
     const [userType, setUserType] = useState<UserType>(null);
-    const [documentType, setDocumentType] = useState<DocumentType>(null);
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [remember, setRemember] = useState(false);
@@ -26,26 +24,12 @@ export default function LoginPage() {
     const handleTypeSelect = (type: UserType) => {
         dispatch(clearError());
         setUserType(type);
-        if (type === "provider") {
-            setStep(2);
-        } else {
-            setStep(1.5);
-        }
-    };
-
-    const handleDocumentSelect = (doc: DocumentType) => {
-        setDocumentType(doc);
         setStep(2);
     };
 
     const handleBack = () => {
         dispatch(clearError());
-        if (step === 2) {
-            setStep(userType === "client" ? 1.5 : 1);
-        } else if (step === 1.5) {
-            setStep(1);
-            setDocumentType(null);
-        }
+        setStep(1);
     };
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -138,50 +122,6 @@ export default function LoginPage() {
                     </div>
                 )}
 
-                {/* ── STEP 1.5: CPF / CNPJ selection ── */}
-                {step === 1.5 && (
-                    <div className="bg-white rounded-2xl shadow-sm border border-border p-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                        <div className="text-center mb-8">
-                            <h1 className="text-2xl font-bold">Tipo de conta</h1>
-                            <p className="text-muted-foreground mt-2 text-sm">Você é pessoa física ou jurídica?</p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <button
-                                onClick={() => handleDocumentSelect("cpf")}
-                                className="group flex flex-col items-center gap-4 rounded-2xl border-2 border-border bg-background p-6 hover:border-primary hover:shadow-md transition-all duration-200"
-                            >
-                                <div className="h-14 w-14 rounded-full bg-blue-50 flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                                    <CreditCard className="h-7 w-7 text-blue-600 group-hover:text-primary transition-colors" />
-                                </div>
-                                <div className="text-center">
-                                    <p className="font-semibold text-sm">CPF</p>
-                                    <p className="text-xs text-muted-foreground mt-0.5">Pessoa Física</p>
-                                </div>
-                                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
-                            </button>
-                            <button
-                                onClick={() => handleDocumentSelect("cnpj")}
-                                className="group flex flex-col items-center gap-4 rounded-2xl border-2 border-border bg-background p-6 hover:border-primary hover:shadow-md transition-all duration-200"
-                            >
-                                <div className="h-14 w-14 rounded-full bg-purple-50 flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                                    <Building2 className="h-7 w-7 text-purple-600 group-hover:text-primary transition-colors" />
-                                </div>
-                                <div className="text-center">
-                                    <p className="font-semibold text-sm">CNPJ</p>
-                                    <p className="text-xs text-muted-foreground mt-0.5">Pessoa Jurídica</p>
-                                </div>
-                                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
-                            </button>
-                        </div>
-                        <div className="mt-6 text-center text-sm text-muted-foreground">
-                            Não tem uma conta?{" "}
-                            <Link href="/register" className="text-primary hover:underline font-medium">
-                                Cadastre-se
-                            </Link>
-                        </div>
-                    </div>
-                )}
-
                 {/* ── STEP 2: Login form ── */}
                 {step === 2 && (
                     <div className="bg-white rounded-2xl shadow-sm border border-border p-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -189,10 +129,8 @@ export default function LoginPage() {
                             <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/50 px-4 py-1.5 text-sm font-medium">
                                 {userType === "provider" ? (
                                     <><Briefcase className="h-4 w-4 text-orange-500" /> Prestador de Serviço</>
-                                ) : documentType === "cnpj" ? (
-                                    <><Building2 className="h-4 w-4 text-purple-600" /> Pessoa Jurídica (CNPJ)</>
                                 ) : (
-                                    <><CreditCard className="h-4 w-4 text-blue-600" /> Pessoa Física (CPF)</>
+                                    <><User className="h-4 w-4 text-blue-600" /> Usuário</>
                                 )}
                             </span>
                         </div>
@@ -248,7 +186,7 @@ export default function LoginPage() {
                                     />
                                     <span className="text-muted-foreground">Lembrar-me</span>
                                 </label>
-                                <Link href="#" className="text-primary hover:underline font-medium">
+                                <Link href="/forgot-password" className="text-primary hover:underline font-medium">
                                     Esqueceu a senha?
                                 </Link>
                             </div>

@@ -1,22 +1,29 @@
 "use client";
 
 import { useState } from "react";
+import { useCep } from "@/hooks/useCep";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, User, Briefcase, Loader2 } from "lucide-react";
+import { ArrowLeft, User, Briefcase, Loader2, Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { registerThunk, clearError, selectAuth } from "@/store/slices/authSlice";
+import { SERVICE_AREAS_GROUPED } from "@/lib/serviceAreas";
+import {
+    validateEmail,
+    validateCPF,
+    validateCNPJ,
+    validatePhone,
+    formatCPF,
+    formatCNPJ,
+    formatPhone,
+    getPasswordStrength,
+    passwordStrengthLabel,
+} from "@/lib/validations";
 
 type Role = "client" | "professional";
 type ClientDoc = "cpf" | "cnpj";
-
-const AREAS = [
-    "Pedreiro", "Eletricista", "Encanador", "Pintor", "Marceneiro",
-    "Jardineiro", "Desenvolvedor", "Designer", "Personal Trainer",
-    "Chef", "Fotógrafo", "Cuidador", "Professor", "Outros",
-];
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -25,15 +32,33 @@ export default function RegisterPage() {
 
     const [role, setRole] = useState<Role>("client");
     const [clientDoc, setClientDoc] = useState<ClientDoc>("cpf");
+    const [showPassword, setShowPassword] = useState(false);
 
     // Campos comuns
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [phone, setPhone] = useState("");
 
     // Campos pessoa jurídica (CNPJ / Síndico)
     const [cnpj, setCnpj] = useState("");
-    const [address, setAddress] = useState("");
+    // Address for CNPJ (Síndico)
+    const [addrStreet, setAddrStreet] = useState("");
+    const [addrNumber, setAddrNumber] = useState("");
+    const [addrComplement, setAddrComplement] = useState("");
+    const [addrNeighborhood, setAddrNeighborhood] = useState("");
+    const [addrCity, setAddrCity] = useState("");
+    const [addrState, setAddrState] = useState("");
+
+    const { cepValue: cnpjCep, setCep: setCnpjCep, loading: cepLoading, error: cepError } = useCep((addr) => {
+        setAddrStreet(addr.street);
+        setAddrNeighborhood(addr.neighborhood);
+        setAddrCity(addr.city);
+        setAddrState(addr.state);
+    });
+
+    // Campos CPF (cliente pessoa física)
+    const [cpf, setCpf] = useState("");
 
     // Campos profissional
     const [documentType, setDocumentType] = useState<"CPF" | "CNPJ">("CPF");
@@ -44,6 +69,33 @@ export default function RegisterPage() {
     const [experienceYrs, setExperienceYrs] = useState(0);
     const [bio, setBio] = useState("");
 
+    // ── Validation derived states ──────────────────────────
+    const emailError = email && !validateEmail(email) ? "Email inválido" : "";
+
+    const cpfError = cpf && !validateCPF(cpf) ? "CPF inválido" : "";
+    const cnpjError = cnpj && !validateCNPJ(cnpj) ? "CNPJ inválido" : "";
+    const phoneError = phone && !validatePhone(phone) ? "Celular inválido" : "";
+
+    const provDocError =
+        document
+            ? documentType === "CPF"
+                ? !validateCPF(document) ? "CPF inválido" : ""
+                : !validateCNPJ(document) ? "CNPJ inválido" : ""
+            : "";
+
+    const strength = getPasswordStrength(password);
+
+    const isFormValid = () => {
+        if (!name || !email || !password || password.length < 6) return false;
+        if (emailError) return false;
+        if (phone && phoneError) return false;
+        if (role === "client" && clientDoc === "cpf" && cpf && cpfError) return false;
+        if (role === "client" && clientDoc === "cnpj" && cnpj && cnpjError) return false;
+        if (role === "professional" && document && provDocError) return false;
+        if (role === "professional" && !area) return false;
+        return true;
+    };
+
     const handleRoleChange = (r: Role) => {
         dispatch(clearError());
         setRole(r);
@@ -51,13 +103,15 @@ export default function RegisterPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!isFormValid()) return;
 
         let result;
 
         if (role === "client" && clientDoc === "cpf") {
-            result = await dispatch(registerThunk({ role: "CLIENT_CPF", email, password, name }));
+            result = await dispatch(registerThunk({ role: "CLIENT_CPF", email, password, name, cpf }));
         } else if (role === "client" && clientDoc === "cnpj") {
-            result = await dispatch(registerThunk({ role: "CLIENT_CNPJ", email, password, name, cnpj, address }));
+            const fullAddress = [addrStreet, addrNumber, addrComplement, addrNeighborhood, addrCity, addrState].filter(Boolean).join(", ");
+            result = await dispatch(registerThunk({ role: "CLIENT_CNPJ", email, password, name, cnpj, address: fullAddress }));
         } else {
             if (!area) return;
             result = await dispatch(registerThunk({
@@ -85,6 +139,17 @@ export default function RegisterPage() {
                 router.push("/profile");
             }
         }
+    };
+
+    const strengthColors = {
+        weak: "bg-red-500",
+        medium: "bg-yellow-500",
+        strong: "bg-green-500",
+    };
+    const strengthTextColors = {
+        weak: "text-red-500",
+        medium: "text-yellow-600",
+        strong: "text-green-600",
     };
 
     return (
@@ -172,50 +237,145 @@ export default function RegisterPage() {
                 )}
 
                 {/* FORM */}
-                <form className="space-y-5" onSubmit={handleSubmit}>
+                <form className="space-y-4" onSubmit={handleSubmit}>
                     <div className="grid md:grid-cols-2 gap-4">
-                        <input
-                            className="input"
-                            placeholder={role === "client" && clientDoc === "cnpj" ? "Nome da empresa" : "Nome completo"}
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            required
-                        />
-                        <input
-                            className="input"
-                            type="email"
-                            placeholder="Email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                        />
+                        <div>
+                            <input
+                                className="input"
+                                placeholder={role === "client" && clientDoc === "cnpj" ? "Nome da empresa" : "Nome completo"}
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                required
+                            />
+                        </div>
+                        <div>
+                            <input
+                                className={cn("input", emailError && "border-red-400")}
+                                type="email"
+                                placeholder="Email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                            {emailError && <p className="text-xs text-red-500 mt-1">{emailError}</p>}
+                        </div>
                     </div>
 
-                    <input
-                        className="input"
-                        type="password"
-                        placeholder="Senha (mín. 6 caracteres)"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        minLength={6}
-                        required
-                    />
+                    {/* Celular */}
+                    <div>
+                        <input
+                            className={cn("input", phoneError && "border-red-400")}
+                            placeholder="Celular (opcional)"
+                            value={phone}
+                            onChange={(e) => setPhone(formatPhone(e.target.value))}
+                        />
+                        {phoneError && <p className="text-xs text-red-500 mt-1">{phoneError}</p>}
+                    </div>
 
-                    {/* CAMPOS CNPJ (CLIENTE JURÍDICO) */}
+                    {/* Senha + força */}
+                    <div>
+                        <div className="relative">
+                            <input
+                                className="input pr-10"
+                                type={showPassword ? "text" : "password"}
+                                placeholder="Senha (mín. 6 caracteres)"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                minLength={6}
+                                required
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            >
+                                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                        </div>
+                        {password && (
+                            <div className="mt-2 space-y-1">
+                                <div className="flex gap-1 h-1">
+                                    {(["weak", "medium", "strong"] as const).map((s, i) => (
+                                        <div
+                                            key={s}
+                                            className={cn(
+                                                "flex-1 rounded-full transition-all",
+                                                (strength === "weak" && i === 0) ||
+                                                    (strength === "medium" && i <= 1) ||
+                                                    strength === "strong"
+                                                    ? strengthColors[strength]
+                                                    : "bg-muted"
+                                            )}
+                                        />
+                                    ))}
+                                </div>
+                                <p className={cn("text-xs", strengthTextColors[strength])}>
+                                    Força: {passwordStrengthLabel[strength]}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* CPF (cliente física) */}
+                    {role === "client" && clientDoc === "cpf" && (
+                        <div>
+                            <input
+                                className={cn("input", cpfError && "border-red-400")}
+                                placeholder="CPF (opcional)"
+                                value={cpf}
+                                onChange={(e) => setCpf(formatCPF(e.target.value))}
+                            />
+                            {cpfError && <p className="text-xs text-red-500 mt-1">{cpfError}</p>}
+                        </div>
+                    )}
+
+                    {/* CAMPOS CNPJ (SÍNDICO) */}
                     {role === "client" && clientDoc === "cnpj" && (
                         <>
-                            <input
-                                className="input"
-                                placeholder="CNPJ"
-                                value={cnpj}
-                                onChange={(e) => setCnpj(e.target.value)}
-                            />
-                            <input
-                                className="input"
-                                placeholder="Endereço do condomínio"
-                                value={address}
-                                onChange={(e) => setAddress(e.target.value)}
-                            />
+                            <div>
+                                <input
+                                    className={cn("input", cnpjError && "border-red-400")}
+                                    placeholder="CNPJ"
+                                    value={cnpj}
+                                    onChange={(e) => setCnpj(formatCNPJ(e.target.value))}
+                                />
+                                {cnpjError && <p className="text-xs text-red-500 mt-1">{cnpjError}</p>}
+                            </div>
+
+                            {/* Address auto-fill via CEP */}
+                            <hr className="border-border" />
+                            <h3 className="text-sm font-medium text-muted-foreground">Endereço do condomínio</h3>
+
+                            <div className="relative">
+                                <input
+                                    className="input pr-8"
+                                    placeholder="CEP (auto-preenche)"
+                                    value={cnpjCep}
+                                    onChange={(e) => setCnpjCep(e.target.value)}
+                                    maxLength={9}
+                                />
+                                {cepLoading && <span className="absolute right-3 top-2.5 text-xs text-muted-foreground animate-pulse">...</span>}
+                                {cepError && <p className="text-xs text-red-500 mt-1">{cepError}</p>}
+                            </div>
+
+                            <div className="grid md:grid-cols-3 gap-3">
+                                <div className="md:col-span-2">
+                                    <input className="input" placeholder="Logradouro" value={addrStreet} onChange={(e) => setAddrStreet(e.target.value)} />
+                                </div>
+                                <input className="input" placeholder="Número" value={addrNumber} onChange={(e) => setAddrNumber(e.target.value)} />
+                            </div>
+
+                            <div className="grid md:grid-cols-2 gap-3">
+                                <input className="input" placeholder="Complemento" value={addrComplement} onChange={(e) => setAddrComplement(e.target.value)} />
+                                <input className="input" placeholder="Bairro" value={addrNeighborhood} onChange={(e) => setAddrNeighborhood(e.target.value)} />
+                            </div>
+
+                            <div className="grid md:grid-cols-3 gap-3">
+                                <div className="md:col-span-2">
+                                    <input className="input" placeholder="Cidade" value={addrCity} onChange={(e) => setAddrCity(e.target.value)} />
+                                </div>
+                                <input className="input" placeholder="UF" maxLength={2} value={addrState} onChange={(e) => setAddrState(e.target.value.toUpperCase().slice(0, 2))} />
+                            </div>
                         </>
                     )}
 
@@ -229,17 +389,22 @@ export default function RegisterPage() {
                                 <select
                                     className="input"
                                     value={documentType}
-                                    onChange={(e) => setDocumentType(e.target.value as "CPF" | "CNPJ")}
+                                    onChange={(e) => { setDocumentType(e.target.value as "CPF" | "CNPJ"); setDocument(""); }}
                                 >
-                                    <option value="CPF">CPF</option>
-                                    <option value="CNPJ">CNPJ</option>
+                                    <option value="CPF">CPF — Pessoa Física</option>
+                                    <option value="CNPJ">CNPJ — Pessoa Jurídica</option>
                                 </select>
-                                <input
-                                    className="input"
-                                    placeholder="Número do documento"
-                                    value={document}
-                                    onChange={(e) => setDocument(e.target.value)}
-                                />
+                                <div>
+                                    <input
+                                        className={cn("input", provDocError && "border-red-400")}
+                                        placeholder={`Número do ${documentType}`}
+                                        value={document}
+                                        onChange={(e) =>
+                                            setDocument(documentType === "CPF" ? formatCPF(e.target.value) : formatCNPJ(e.target.value))
+                                        }
+                                    />
+                                    {provDocError && <p className="text-xs text-red-500 mt-1">{provDocError}</p>}
+                                </div>
                             </div>
 
                             <input
@@ -268,6 +433,7 @@ export default function RegisterPage() {
                                 />
                             </div>
 
+                            {/* Área de atuação — completa e agrupada */}
                             <select
                                 className="input"
                                 value={area}
@@ -275,8 +441,12 @@ export default function RegisterPage() {
                                 required
                             >
                                 <option value="">Área de atuação *</option>
-                                {AREAS.map((a) => (
-                                    <option key={a}>{a}</option>
+                                {SERVICE_AREAS_GROUPED.map((group) => (
+                                    <optgroup key={group.category} label={group.category}>
+                                        {group.items.map((item) => (
+                                            <option key={item} value={item}>{item}</option>
+                                        ))}
+                                    </optgroup>
                                 ))}
                             </select>
 
@@ -291,7 +461,7 @@ export default function RegisterPage() {
 
                     <button
                         type="submit"
-                        disabled={loading}
+                        disabled={loading || !isFormValid()}
                         className="w-full bg-primary text-white font-semibold h-11 rounded-md hover:bg-primary/90 transition flex items-center justify-center gap-2 disabled:opacity-60"
                     >
                         {loading ? (
