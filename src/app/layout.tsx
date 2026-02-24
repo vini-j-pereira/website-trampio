@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { Sidebar } from "@/components/Sidebar";
-import Header  from "@/components/header";
+import Header from "@/components/header";
+import { ReduxProvider } from "./providers";
 import "./globals.css";
 
 const inter = Inter({
@@ -22,10 +22,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} antialiased flex bg-background min-h-screen`}>
-        <Header/>
-        <main className="pt-28 w-full">
-          {children}
-        </main>
+        <ReduxProvider>
+          <Header />
+          <main className="pt-28 w-full">
+            {children}
+          </main>
+        </ReduxProvider>
       </body>
     </html>
   );

@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, User, Briefcase, ArrowRight, CreditCard, Building2 } from "lucide-react";
+import { ArrowLeft, User, Briefcase, ArrowRight, CreditCard, Building2, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { loginThunk, clearError, selectAuth } from "@/store/slices/authSlice";
 
 type UserType = "client" | "provider" | null;
 type DocumentType = "cpf" | "cnpj" | null;
@@ -11,6 +13,9 @@ type Step = 1 | 1.5 | 2;
 
 export default function LoginPage() {
     const router = useRouter();
+    const dispatch = useAppDispatch();
+    const { loading, error } = useAppSelector(selectAuth);
+
     const [step, setStep] = useState<Step>(1);
     const [userType, setUserType] = useState<UserType>(null);
     const [documentType, setDocumentType] = useState<DocumentType>(null);
@@ -19,12 +24,11 @@ export default function LoginPage() {
     const [remember, setRemember] = useState(false);
 
     const handleTypeSelect = (type: UserType) => {
+        dispatch(clearError());
         setUserType(type);
         if (type === "provider") {
-            // Providers skip the CPF/CNPJ step
             setStep(2);
         } else {
-            // Clients must choose CPF or CNPJ
             setStep(1.5);
         }
     };
@@ -35,26 +39,29 @@ export default function LoginPage() {
     };
 
     const handleBack = () => {
+        dispatch(clearError());
         if (step === 2) {
-            if (userType === "client") {
-                setStep(1.5);
-            } else {
-                setStep(1);
-            }
+            setStep(userType === "client" ? 1.5 : 1);
         } else if (step === 1.5) {
             setStep(1);
             setDocumentType(null);
         }
     };
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (userType === "provider") {
-            router.push("/dashboard/provider");
-        } else if (userType === "client" && documentType === "cnpj") {
-            router.push("/dashboard");
-        } else {
-            router.push("/profile");
+
+        const result = await dispatch(loginThunk({ email, password }));
+
+        if (loginThunk.fulfilled.match(result)) {
+            const role = result.payload.user.role;
+            if (role === "PROVIDER") {
+                router.push("/dashboard/provider");
+            } else if (role === "CLIENT_CNPJ") {
+                router.push("/dashboard");
+            } else {
+                router.push("/profile");
+            }
         }
     };
 
@@ -92,13 +99,9 @@ export default function LoginPage() {
                     <div className="bg-white rounded-2xl shadow-sm border border-border p-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <div className="text-center mb-8">
                             <h1 className="text-2xl font-bold">Bem-vindo ao Trampio</h1>
-                            <p className="text-muted-foreground mt-2 text-sm">
-                                Como você quer entrar?
-                            </p>
+                            <p className="text-muted-foreground mt-2 text-sm">Como você quer entrar?</p>
                         </div>
-
                         <div className="grid grid-cols-2 gap-4">
-                            {/* Common User */}
                             <button
                                 onClick={() => handleTypeSelect("client")}
                                 className="group flex flex-col items-center gap-4 rounded-2xl border-2 border-border bg-background p-6 hover:border-primary hover:shadow-md transition-all duration-200"
@@ -108,14 +111,10 @@ export default function LoginPage() {
                                 </div>
                                 <div className="text-center">
                                     <p className="font-semibold text-sm">Usuário</p>
-                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                        Busco serviços
-                                    </p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Busco serviços</p>
                                 </div>
                                 <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
                             </button>
-
-                            {/* Service Provider */}
                             <button
                                 onClick={() => handleTypeSelect("provider")}
                                 className="group flex flex-col items-center gap-4 rounded-2xl border-2 border-border bg-background p-6 hover:border-primary hover:shadow-md transition-all duration-200"
@@ -125,14 +124,11 @@ export default function LoginPage() {
                                 </div>
                                 <div className="text-center">
                                     <p className="font-semibold text-sm">Prestador</p>
-                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                        Ofereço serviços
-                                    </p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Ofereço serviços</p>
                                 </div>
                                 <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
                             </button>
                         </div>
-
                         <div className="mt-6 text-center text-sm text-muted-foreground">
                             Não tem uma conta?{" "}
                             <Link href="/register" className="text-primary hover:underline font-medium">
@@ -142,18 +138,14 @@ export default function LoginPage() {
                     </div>
                 )}
 
-                {/* ── STEP 1.5: CPF / CNPJ selection (clients only) ── */}
+                {/* ── STEP 1.5: CPF / CNPJ selection ── */}
                 {step === 1.5 && (
                     <div className="bg-white rounded-2xl shadow-sm border border-border p-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <div className="text-center mb-8">
                             <h1 className="text-2xl font-bold">Tipo de conta</h1>
-                            <p className="text-muted-foreground mt-2 text-sm">
-                                Você é pessoa física ou jurídica?
-                            </p>
+                            <p className="text-muted-foreground mt-2 text-sm">Você é pessoa física ou jurídica?</p>
                         </div>
-
                         <div className="grid grid-cols-2 gap-4">
-                            {/* CPF – Pessoa Física */}
                             <button
                                 onClick={() => handleDocumentSelect("cpf")}
                                 className="group flex flex-col items-center gap-4 rounded-2xl border-2 border-border bg-background p-6 hover:border-primary hover:shadow-md transition-all duration-200"
@@ -163,14 +155,10 @@ export default function LoginPage() {
                                 </div>
                                 <div className="text-center">
                                     <p className="font-semibold text-sm">CPF</p>
-                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                        Pessoa Física
-                                    </p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Pessoa Física</p>
                                 </div>
                                 <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
                             </button>
-
-                            {/* CNPJ – Pessoa Jurídica */}
                             <button
                                 onClick={() => handleDocumentSelect("cnpj")}
                                 className="group flex flex-col items-center gap-4 rounded-2xl border-2 border-border bg-background p-6 hover:border-primary hover:shadow-md transition-all duration-200"
@@ -180,14 +168,11 @@ export default function LoginPage() {
                                 </div>
                                 <div className="text-center">
                                     <p className="font-semibold text-sm">CNPJ</p>
-                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                        Pessoa Jurídica
-                                    </p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Pessoa Jurídica</p>
                                 </div>
                                 <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
                             </button>
                         </div>
-
                         <div className="mt-6 text-center text-sm text-muted-foreground">
                             Não tem uma conta?{" "}
                             <Link href="/register" className="text-primary hover:underline font-medium">
@@ -200,62 +185,55 @@ export default function LoginPage() {
                 {/* ── STEP 2: Login form ── */}
                 {step === 2 && (
                     <div className="bg-white rounded-2xl shadow-sm border border-border p-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                        {/* Type badge */}
                         <div className="flex justify-center mb-6">
                             <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/50 px-4 py-1.5 text-sm font-medium">
                                 {userType === "provider" ? (
-                                    <>
-                                        <Briefcase className="h-4 w-4 text-orange-500" />
-                                        Prestador de Serviço
-                                    </>
+                                    <><Briefcase className="h-4 w-4 text-orange-500" /> Prestador de Serviço</>
                                 ) : documentType === "cnpj" ? (
-                                    <>
-                                        <Building2 className="h-4 w-4 text-purple-600" />
-                                        Pessoa Jurídica (CNPJ)
-                                    </>
+                                    <><Building2 className="h-4 w-4 text-purple-600" /> Pessoa Jurídica (CNPJ)</>
                                 ) : (
-                                    <>
-                                        <CreditCard className="h-4 w-4 text-blue-600" />
-                                        Pessoa Física (CPF)
-                                    </>
+                                    <><CreditCard className="h-4 w-4 text-blue-600" /> Pessoa Física (CPF)</>
                                 )}
                             </span>
                         </div>
 
                         <div className="text-center mb-6">
                             <h1 className="text-2xl font-bold">Bem-vindo de volta</h1>
-                            <p className="text-muted-foreground mt-1 text-sm">
-                                Acesse sua conta para continuar
-                            </p>
+                            <p className="text-muted-foreground mt-1 text-sm">Acesse sua conta para continuar</p>
                         </div>
+
+                        {/* Mensagem de erro da API */}
+                        {error && (
+                            <div className="mb-4 rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">
+                                {error}
+                            </div>
+                        )}
 
                         <form onSubmit={handleLogin} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-1.5" htmlFor="email">
-                                    Email
-                                </label>
+                                <label className="block text-sm font-medium mb-1.5" htmlFor="email">Email</label>
                                 <input
                                     type="email"
                                     id="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                    disabled={loading}
+                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
                                     placeholder="seu@email.com"
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium mb-1.5" htmlFor="password">
-                                    Senha
-                                </label>
+                                <label className="block text-sm font-medium mb-1.5" htmlFor="password">Senha</label>
                                 <input
                                     type="password"
                                     id="password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     required
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                    disabled={loading}
+                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
                                     placeholder="••••••••"
                                 />
                             </div>
@@ -277,9 +255,14 @@ export default function LoginPage() {
 
                             <button
                                 type="submit"
-                                className="w-full bg-primary text-primary-foreground font-semibold h-10 rounded-md hover:bg-primary/90 transition-colors"
+                                disabled={loading}
+                                className="w-full bg-primary text-primary-foreground font-semibold h-10 rounded-md hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
                             >
-                                Entrar
+                                {loading ? (
+                                    <><Loader2 className="h-4 w-4 animate-spin" /> Entrando...</>
+                                ) : (
+                                    "Entrar"
+                                )}
                             </button>
                         </form>
 
