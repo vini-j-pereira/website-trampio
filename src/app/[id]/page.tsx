@@ -3,15 +3,17 @@
 import { services } from "../../lib/mockServices";
 import { notFound, useRouter } from "next/navigation";
 import { MapPin } from "lucide-react";
+import { use } from "react";
 
 export default function ServiceDetails({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
   const router = useRouter();
+  const { id } = use(params);
   const service = services.find(
-    (s) => s.id === Number(params.id)
+    (s) => s.id === Number(id)
   );
 
   if (!service) return notFound();

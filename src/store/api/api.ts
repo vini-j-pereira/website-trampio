@@ -80,14 +80,32 @@ export interface ProfileData {
         week_goal?: number;
         month_goal?: number;
         document_type: 'CPF' | 'CNPJ';
+        document?: string;
         company_name?: string;
+        phone?: string;
+        neighborhood?: string;
+        categories?: string[];
+        services?: string;
+        portfolio?: PortfolioPhotoData[];
     };
+}
+
+export interface PortfolioPhotoData {
+    id: string;
+    provider_id: string;
+    url: string;
+    description?: string;
+    created_at: string;
 }
 
 export const profileApi = {
     get: () => req<ProfileData>('/profile'),
     update: (body: Partial<Record<string, unknown>>) =>
         req<unknown>('/profile', 'PATCH', body),
+    addPortfolio: (url: string, description?: string) =>
+        req<PortfolioPhotoData>('/profile/portfolio', 'POST', { url, description }),
+    removePortfolio: (id: string) =>
+        req<void>(`/profile/portfolio/${id}`, 'DELETE'),
 };
 
 // ─── Calendar Events ──────────────────────────────────────
@@ -230,6 +248,7 @@ export interface ProviderSearchResult {
     experience_yrs: number;
     availability: 'AVAILABLE' | 'BUSY' | 'VACATION';
     radius_km: number;
+    company_name?: string;
 }
 
 export const searchApi = {
@@ -260,6 +279,7 @@ export const searchApi = {
         const query = qs.toString();
         return req<OpenServiceRequest[]>(`/search/requests${query ? `?${query}` : ''}`);
     },
+    getProvider: (id: string) => req<ProviderSearchResult>(`/search/providers/${id}`),
 };
 
 export interface OpenServiceRequest {
@@ -279,5 +299,6 @@ export interface OpenServiceRequest {
         avatar_url?: string;
     };
 }
+
 
 

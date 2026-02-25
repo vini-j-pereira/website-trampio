@@ -47,55 +47,80 @@ function StarRating({ rating, count }: { rating: number; count: number }) {
 function ProviderCard({ p }: { p: ProviderSearchResult }) {
     const location = [p.city, p.state].filter(Boolean).join(", ");
     return (
-        <div className="group bg-white rounded-2xl border border-border overflow-hidden hover:border-primary/50 hover:shadow-lg transition-all duration-300 flex flex-col">
-            {/* Cover */}
-            <div className="relative h-36 bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0">
-                {p.avatar_url ? (
-                    <img src={p.avatar_url} alt={p.name} className="w-full h-full object-cover" />
-                ) : (
-                    <div className="h-16 w-16 rounded-full bg-primary/80 flex items-center justify-center shadow-lg">
-                        <span className="text-white font-bold text-2xl">{getInitials(p.name)}</span>
-                    </div>
-                )}
-                {/* availability badge */}
-                <span className={cn(
-                    "absolute top-3 left-3 text-[10px] font-bold px-2 py-0.5 rounded-full",
-                    p.availability === "AVAILABLE" ? "bg-green-100 text-green-700" :
-                        p.availability === "BUSY" ? "bg-yellow-100 text-yellow-700" :
-                            "bg-red-100 text-red-600"
-                )}>
-                    {p.availability === "AVAILABLE" ? "✅ Disponível" :
-                        p.availability === "BUSY" ? "🟡 Ocupado" : "🔴 Férias"}
-                </span>
+        <div className="group bg-white rounded-3xl border border-border overflow-hidden hover:border-primary/50 hover:shadow-2xl transition-all duration-500 flex flex-col h-full">
+            {/* Cover / Picture area */}
+            <div className="relative h-40 bg-muted overflow-hidden">
+                {/* Background "blur" pattern */}
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-primary/5 opacity-50" />
+
+                <div className="absolute inset-0 flex items-center justify-center p-4">
+                    {p.avatar_url ? (
+                        <img src={p.avatar_url} alt={p.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                    ) : (
+                        <div className="h-20 w-20 rounded-2xl bg-primary/80 flex items-center justify-center shadow-2xl backdrop-blur-sm">
+                            <span className="text-white font-bold text-3xl">{getInitials(p.name)}</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* status overlay */}
+                <div className="absolute top-3 right-3 flex flex-col gap-2 items-end">
+                    <span className={cn(
+                        "text-[10px] font-bold px-2 py-1 rounded-full border shadow-sm backdrop-blur-md",
+                        p.availability === "AVAILABLE" ? "bg-green-50/80 border-green-200 text-green-700" :
+                            p.availability === "BUSY" ? "bg-yellow-50/80 border-yellow-200 text-yellow-700" :
+                                "bg-red-50/80 border-red-200 text-red-600"
+                    )}>
+                        {p.availability === "AVAILABLE" ? "Disponível" :
+                            p.availability === "BUSY" ? "Ocupado" : "Férias"}
+                    </span>
+                </div>
+
                 {/* area badge */}
-                <span className="absolute bottom-3 left-3 px-2 py-0.5 rounded bg-primary text-[10px] font-bold uppercase tracking-wider text-white inline-block">
-                    {p.area}
-                </span>
+                <div className="absolute bottom-3 left-3">
+                    <span className="px-2.5 py-1 rounded-lg bg-primary/90 text-[10px] font-bold uppercase tracking-wider text-white shadow-lg backdrop-blur-sm">
+                        {p.area}
+                    </span>
+                </div>
             </div>
 
             {/* Body */}
-            <div className="p-4 flex flex-col flex-1 gap-2">
-                <h3 className="font-bold text-base">{p.name}</h3>
+            <div className="p-5 flex flex-col flex-1 gap-2">
+                <div>
+                    <h3 className="font-bold text-lg leading-tight group-hover:text-primary transition-colors">{p.name}</h3>
+                    {p.company_name && (
+                        <p className="text-xs text-muted-foreground font-medium flex items-center gap-1 mt-0.5">
+                            <Briefcase className="h-3 w-3" /> {p.company_name}
+                        </p>
+                    )}
+                </div>
 
                 {location && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <MapPin className="h-3 w-3" /> {location}
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <MapPin className="h-3.5 w-3.5" /> {location}
                     </div>
                 )}
 
-                <StarRating rating={p.rating} count={p.rating_count} />
+                <div className="my-1">
+                    <StarRating rating={p.rating} count={p.rating_count} />
+                </div>
 
                 {p.bio && (
-                    <p className="text-sm text-muted-foreground line-clamp-2">{p.bio}</p>
+                    <p className="text-sm text-muted-foreground line-clamp-2 italic leading-relaxed">
+                        &quot;{p.bio}&quot;
+                    </p>
                 )}
 
-                <div className="mt-auto pt-3 border-t border-border flex items-center justify-between gap-2">
-                    <div className="text-xs text-muted-foreground">
-                        {p.experience_yrs > 0 ? `${p.experience_yrs} ano${p.experience_yrs !== 1 ? "s" : ""} de experiência` : "Profissional novo"}
+                <div className="mt-auto pt-4 flex items-center justify-between gap-3">
+                    <div className="flex flex-col">
+                        <span className="text-[10px] uppercase tracking-tighter font-bold text-muted-foreground/60">Experiência</span>
+                        <span className="text-xs font-semibold">
+                            {p.experience_yrs > 0 ? `${p.experience_yrs} ano${p.experience_yrs !== 1 ? "s" : ""}` : "Iniciante"}
+                        </span>
                     </div>
                     <Link
                         href={`/provider/${p.id}`}
-                        className="px-3 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/90 transition-colors whitespace-nowrap"
+                        className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl hover:bg-primary/90 transition-all shadow-md shadow-primary/10 active:scale-95"
                     >
                         Ver Perfil
                     </Link>

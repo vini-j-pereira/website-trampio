@@ -1,15 +1,16 @@
 "use client";
 
 import { services } from "../../../lib/mockServices";
-import { useState } from "react";
+import { useState, use } from "react";
 
 export default function ChatPage({
   params,
 }: {
-  params: { serviceId: string };
+  params: Promise<{ serviceId: string }>;
 }) {
+  const { serviceId } = use(params);
   const service = services.find(
-    (s) => s.id === Number(params.serviceId)
+    (s) => s.id === Number(serviceId)
   );
 
   const [message, setMessage] = useState("");

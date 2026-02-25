@@ -1,12 +1,12 @@
 ﻿"use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import Link from "next/link"
-import { Star, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Trash2, Plus, X, Search, FileText, Pencil, Check, Target, Flame, Settings, MapPin, Bell, MessageCircle, Loader2, LogOut } from "lucide-react"
+import { Star, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Trash2, Plus, X, Search, FileText, Pencil, Check, Target, Flame, Settings, MapPin, Bell, MessageCircle, Loader2, LogOut, User, Sliders, Camera, Phone, Mail, Tag } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
 import { selectUser, logout } from "@/store/slices/authSlice"
-import { fetchProfileThunk, updateProfileThunk, selectProfile } from "@/store/slices/profileSlice"
+import { fetchProfileThunk, updateProfileThunk, selectProfile, clearProfileError } from "@/store/slices/profileSlice"
 import { fetchEventsThunk, createEventThunk, updateEventThunk, deleteEventThunk, selectEvents } from "@/store/slices/eventsSlice"
 import { fetchTransactionsThunk, createTransactionThunk, updateTransactionThunk, deleteTransactionThunk, selectTransactions } from "@/store/slices/transactionsSlice"
 import type { CalendarEventData, TransactionData } from "@/store/api/api"
@@ -188,47 +188,321 @@ function EventModal({ day, month, year, event, onClose, onSave, onDelete }: {
   )
 }
 
-// ── Settings Modal (inline) ───────────────────────────────
-function ProviderSettingsModal({ profile, onSave, onClose }: {
-  profile: { name: string; bio?: string; area: string; city?: string; state?: string; availability: string; radius_km: number; experience_yrs: number; avatar_url?: string; week_goal?: number; month_goal?: number }
-  onSave: (data: Record<string, unknown>) => void
-  onClose: () => void
-}) {
-  const [form, setForm] = useState({ name: profile.name, bio: profile.bio ?? "", area: profile.area, city: profile.city ?? "", state: profile.state ?? "", availability: profile.availability, radius_km: profile.radius_km, experience_yrs: profile.experience_yrs, week_goal: profile.week_goal ?? 0, month_goal: profile.month_goal ?? 0 })
+// ── Helpers for Modal ────────────────────────────────────
+function Field({ label, icon: Icon, children }: { label: string; icon: React.ElementType; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden">
-        <div className="bg-gradient-to-r from-primary to-primary/80 px-6 py-4 flex items-center justify-between">
-          <h2 className="font-semibold text-white text-lg">Configurações do Perfil</h2>
-          <button onClick={onClose} className="text-white/70 hover:text-white"><X className="h-5 w-5" /></button>
+    <div>
+      <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground mb-1.5">
+        <Icon className="h-3.5 w-3.5 text-primary" />
+        {label}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+// ── Settings Modal (Tabbed) ───────────────────────────────
+function ProviderSettingsModal({ profile, onSave, onClose, error }: {
+  profile: {
+    name: string; email?: string; bio?: string; area: string; city?: string; state?: string;
+    availability: string; radius_km: number; experience_yrs: number; avatar_url?: string;
+    week_goal?: number; month_goal?: number; phone?: string; neighborhood?: string;
+    categories?: string[]; services?: string;
+  }
+  onSave: (data: Record<string, unknown>) => Promise<void>
+  onClose: () => void
+  error?: string | null
+}) {
+  const [form, setForm] = useState({
+    name: profile.name,
+    email: profile.email ?? "",
+    phone: profile.phone ?? "",
+    bio: profile.bio ?? "",
+    area: profile.area,
+    city: profile.city ?? "",
+    state: profile.state ?? "",
+    neighborhood: profile.neighborhood ?? "",
+    availability: profile.availability,
+    radius_km: profile.radius_km,
+    experience_yrs: profile.experience_yrs,
+    avatar_url: profile.avatar_url ?? "",
+    week_goal: profile.week_goal ?? 0,
+    month_goal: profile.month_goal ?? 0,
+    categories: profile.categories ?? [],
+    services: profile.services ?? ""
+  })
+  const [activeTab, setActiveTab] = useState<"perfil" | "atuacao" | "disponibilidade">("perfil")
+  const [saved, setSaved] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setForm(f => ({ ...f, avatar_url: reader.result as string }))
+    reader.readAsDataURL(file)
+  }
+
+  const handleSave = async () => {
+    await onSave(form)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const tabs = [
+    { id: "perfil" as const, label: "Perfil", icon: User },
+    { id: "atuacao" as const, label: "Atuação", icon: MapPin },
+    { id: "disponibilidade" as const, label: "Status", icon: Sliders },
+  ]
+
+  const inputCls = "w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white transition-all"
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0 bg-muted/20">
+          <div className="flex-1">
+            <h2 className="text-base font-bold flex items-center gap-2">
+              <Settings className="h-4 w-4 text-primary" />
+              Configurações do Perfil
+            </h2>
+            {error && <p className="text-[10px] text-red-500 font-medium animate-pulse">{error}</p>}
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-muted rounded-lg transition">
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        <div className="p-6 space-y-3 max-h-[80vh] overflow-y-auto">
-          <input className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" placeholder="Nome" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-          <textarea className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" placeholder="Bio" rows={2} value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))} />
-          <input className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" placeholder="Área de atuação" value={form.area} onChange={e => setForm(f => ({ ...f, area: e.target.value }))} />
-          <div className="grid grid-cols-2 gap-3">
-            <input className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" placeholder="Cidade" value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} />
-            <input className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" placeholder="UF" maxLength={2} value={form.state} onChange={e => setForm(f => ({ ...f, state: e.target.value.toUpperCase() }))} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-xs text-muted-foreground">Raio (km)</label><input type="number" className="w-full border border-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" value={form.radius_km} onChange={e => setForm(f => ({ ...f, radius_km: Number(e.target.value) }))} /></div>
-            <div><label className="text-xs text-muted-foreground">Experiência (anos)</label><input type="number" className="w-full border border-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" value={form.experience_yrs} onChange={e => setForm(f => ({ ...f, experience_yrs: Number(e.target.value) }))} /></div>
-          </div>
-          <div><label className="text-xs text-muted-foreground">Disponibilidade</label>
-            <select className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" value={form.availability} onChange={e => setForm(f => ({ ...f, availability: e.target.value }))}>
-              <option value="AVAILABLE">✅ Disponível</option>
-              <option value="BUSY">🟡 Ocupado</option>
-              <option value="VACATION">🔴 De férias</option>
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-xs text-muted-foreground">Meta semanal (R$)</label><input type="number" className="w-full border border-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" value={form.week_goal} onChange={e => setForm(f => ({ ...f, week_goal: Number(e.target.value) }))} /></div>
-            <div><label className="text-xs text-muted-foreground">Meta mensal (R$)</label><input type="number" className="w-full border border-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" value={form.month_goal} onChange={e => setForm(f => ({ ...f, month_goal: Number(e.target.value) }))} /></div>
-          </div>
-          <div className="flex gap-2 pt-2">
-            <button onClick={onClose} className="flex-1 py-2 rounded-xl border border-border text-sm hover:bg-muted transition">Cancelar</button>
-            <button onClick={() => onSave(form)} className="flex-1 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition">Salvar</button>
-          </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-border shrink-0 px-6 bg-white">
+          {tabs.map(t => {
+            const Icon = t.icon
+            return (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-4 py-3 text-xs font-bold border-b-2 transition -mb-px uppercase tracking-wider",
+                  activeTab === t.id
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {t.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Content */}
+        <div className="overflow-y-auto flex-1 p-6 space-y-5 bg-white">
+          {activeTab === "perfil" && (
+            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              {/* Avatar */}
+              <div className="flex flex-col items-center gap-3">
+                <div className="relative">
+                  <div className="h-20 w-20 rounded-full bg-primary flex items-center justify-center overflow-hidden ring-4 ring-primary/20">
+                    {form.avatar_url
+                      ? <img src={form.avatar_url} alt="avatar" className="h-full w-full object-cover" />
+                      : <span className="text-white text-2xl font-bold">{form.name.charAt(0)}</span>
+                    }
+                  </div>
+                  <button
+                    onClick={() => fileRef.current?.click()}
+                    className="absolute bottom-0 right-0 h-7 w-7 bg-primary rounded-full flex items-center justify-center shadow-md hover:bg-primary/90 transition"
+                  >
+                    <Camera className="h-3.5 w-3.5 text-white" />
+                  </button>
+                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImage} />
+                </div>
+                <p className="text-xs text-muted-foreground">Clique na câmera para alterar a foto</p>
+              </div>
+
+              <Field label="Nome completo" icon={User}>
+                <input className={inputCls} placeholder="Seu nome" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              </Field>
+
+              <Field label="E-mail" icon={Mail}>
+                <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  className={inputCls} placeholder="seu@email.com" />
+              </Field>
+
+              <Field label="Telefone / WhatsApp" icon={Phone}>
+                <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                  className={inputCls} placeholder="(00) 00000-0000" />
+              </Field>
+
+              <Field label="Bio / Apresentação" icon={FileText}>
+                <textarea className={cn(inputCls, "resize-none")} placeholder="Fale um pouco sobre você..." rows={3} value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))} />
+              </Field>
+
+              <Field label="Categorias de atuação" icon={Tag}>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {["Casa", "Eventos", "Saúde", "Estilo", "Pro"].map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setForm(f => ({
+                        ...f,
+                        categories: f.categories.includes(cat)
+                          ? f.categories.filter(c => c !== cat)
+                          : [...f.categories, cat]
+                      }))}
+                      className={cn(
+                        "px-3 py-1.5 rounded-full text-xs font-medium border transition",
+                        form.categories.includes(cat)
+                          ? "bg-primary text-white border-primary"
+                          : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                      )}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+
+              <Field label="Serviços principais" icon={Tag}>
+                <textarea value={form.services} onChange={e => setForm(f => ({ ...f, services: e.target.value }))}
+                  className={cn(inputCls, "resize-none")} rows={2}
+                  placeholder="Ex: Instalação elétrica, Pintura, Jardinagem..." />
+              </Field>
+            </div>
+          )}
+
+          {activeTab === "atuacao" && (
+            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="flex items-start gap-3 p-4 bg-primary/5 rounded-xl border border-primary/10">
+                <MapPin className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                <p className="text-xs text-muted-foreground">
+                  Defina sua cidade base e o raio de deslocamento. Clientes dentro dessa área poderão encontrar você nas buscas.
+                </p>
+              </div>
+
+              <Field label="Cidade" icon={MapPin}>
+                <input className={inputCls} placeholder="Ex: São Paulo" value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} />
+              </Field>
+
+              <Field label="Bairro / Região" icon={MapPin}>
+                <input className={inputCls} placeholder="Ex: Pinheiros" value={form.neighborhood} onChange={e => setForm(f => ({ ...f, neighborhood: e.target.value }))} />
+              </Field>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Sliders className="h-3.5 w-3.5 text-primary" />
+                    Raio de atuação
+                  </label>
+                  <span className="text-sm font-bold text-primary">{form.radius_km} km</span>
+                </div>
+
+                <input
+                  type="range"
+                  min={1} max={100} step={1}
+                  value={form.radius_km}
+                  onChange={e => setForm(f => ({ ...f, radius_km: Number(e.target.value) }))}
+                  className="w-full accent-primary cursor-pointer"
+                />
+
+                <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                  <span>1 km</span>
+                  <span>50 km</span>
+                  <span>100 km</span>
+                </div>
+
+                {/* Visual hint */}
+                <div className="mt-4 rounded-xl bg-muted/40 border border-border p-4 flex items-center gap-4">
+                  <div className="relative shrink-0">
+                    <div className="h-12 w-12 rounded-full border-2 border-primary/20 flex items-center justify-center">
+                      <div className="h-8 w-8 rounded-full border-2 border-primary/40 flex items-center justify-center">
+                        <div className="h-2.5 w-2.5 rounded-full bg-primary" />
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold">Alcance atual</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Você aparecerá em buscas de até{" "}
+                      <strong className="text-primary">{form.radius_km} km</strong>{" "}
+                      {form.city ? `de ${form.city}` : "da sua localização"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "disponibilidade" && (
+            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <p className="text-xs text-muted-foreground">
+                Seu status fica visível para os clientes na plataforma. Mude quando necessário.
+              </p>
+
+              {[
+                { value: "AVAILABLE", label: "Disponível", color: "bg-green-500", text: "text-green-700", bg: "bg-green-50 border-green-200", desc: "Apareço nas buscas e aceito novos serviços" },
+                { value: "BUSY", label: "Ocupado", color: "bg-orange-500", text: "text-orange-700", bg: "bg-orange-50 border-orange-200", desc: "Apareço nas buscas mas não aceito novos trabalhos agora" },
+                { value: "VACATION", label: "De férias", color: "bg-blue-500", text: "text-blue-700", bg: "bg-blue-50 border-blue-200", desc: "Não apareço nas buscas temporariamente" },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setForm(f => ({ ...f, availability: opt.value }))}
+                  className={cn(
+                    "w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition",
+                    form.availability === opt.value ? opt.bg : "border-border hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className={cn("h-3 w-3 rounded-full shrink-0", opt.color)} />
+                  <div>
+                    <p className={cn("text-sm font-semibold", form.availability === opt.value ? opt.text : "text-foreground")}>
+                      {opt.label}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                  </div>
+                  {form.availability === opt.value && (
+                    <div className={cn("ml-auto h-5 w-5 rounded-full flex items-center justify-center", opt.color)}>
+                      <Check className="h-3 w-3 text-white" />
+                    </div>
+                  )}
+                </button>
+              ))}
+
+              {/* Current status preview */}
+              {(() => {
+                const opt = [
+                  { value: "AVAILABLE", label: "Disponível", color: "bg-green-500", text: "text-green-700" },
+                  { value: "BUSY", label: "Ocupado", color: "bg-orange-500", text: "text-orange-700" },
+                  { value: "VACATION", label: "De férias", color: "bg-blue-500", text: "text-blue-700" },
+                ].find(o => o.value === form.availability)!
+                return (
+                  <div className="mt-2 p-3 rounded-xl bg-muted/40 border border-border">
+                    <p className="text-xs text-muted-foreground mb-1">Preview do seu status público:</p>
+                    <div className="flex items-center gap-2">
+                      <div className={cn("h-2 w-2 rounded-full", opt.color)} />
+                      <span className={cn("text-xs font-medium", opt.text)}>{opt.label}</span>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-border flex items-center justify-between shrink-0">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-border text-sm hover:bg-muted transition">
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            className={cn(
+              "flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition",
+              saved
+                ? "bg-green-500 text-white"
+                : "bg-primary text-white hover:bg-primary/90"
+            )}
+          >
+            {saved ? <><Check className="h-4 w-4" /> Salvo!</> : "Salvar alterações"}
+          </button>
         </div>
       </div>
     </div>
@@ -240,7 +514,7 @@ export default function DashboardPage() {
   const dispatch = useAppDispatch()
   const router = useRouter()
   const authUser = useAppSelector(selectUser)
-  const { data: profileData, loading: profileLoading } = useAppSelector(selectProfile)
+  const { data: profileData, loading: profileLoading, error: profileError } = useAppSelector(selectProfile)
   const { items: dbEvents } = useAppSelector(selectEvents)
   const { items: dbTransactions } = useAppSelector(selectTransactions)
 
@@ -401,8 +675,9 @@ export default function DashboardPage() {
             <MessageCircle className="h-5 w-5 text-muted-foreground" />
             <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary border-2 border-white" />
           </Link>
-          <button className="relative flex items-center justify-center h-10 w-10 rounded-full border border-border bg-white shadow-sm hover:bg-muted transition">
+          <button className="relative flex items-center justify-center h-10 w-10 rounded-full border border-border bg-white shadow-sm hover:bg-muted transition" title="Notificações">
             <Bell className="h-5 w-5 text-muted-foreground" />
+            <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-white" />
           </button>
 
           {/* Profile chip */}
@@ -415,7 +690,7 @@ export default function DashboardPage() {
               <p className="text-xs font-semibold leading-none">{displayName}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{authUser?.email}</p>
             </div>
-            <button onClick={() => setShowSettings(true)} className="ml-1 p-1.5 rounded-full hover:bg-muted transition"><Settings className="h-4 w-4 text-muted-foreground hover:text-primary transition" /></button>
+            <button onClick={() => setShowSettings(true)} className="ml-1 p-1.5 rounded-full hover:bg-muted transition" title="Configurações"><Settings className="h-4 w-4 text-muted-foreground hover:text-primary transition" /></button>
             <button onClick={() => { dispatch(logout()); router.push("/login") }} className="ml-0.5 p-1.5 rounded-full hover:bg-muted transition" title="Sair"><LogOut className="h-4 w-4 text-muted-foreground hover:text-red-500 transition" /></button>
           </div>
         </div>
@@ -577,8 +852,17 @@ export default function DashboardPage() {
       {showSettings && provider && (
         <ProviderSettingsModal
           profile={provider}
-          onSave={async (data) => { await dispatch(updateProfileThunk(data)); setShowSettings(false) }}
-          onClose={() => setShowSettings(false)}
+          error={profileError}
+          onSave={async (data) => {
+            const result = await dispatch(updateProfileThunk(data))
+            if (updateProfileThunk.fulfilled.match(result)) {
+              setShowSettings(false)
+            }
+          }}
+          onClose={() => {
+            setShowSettings(false)
+            dispatch(clearProfileError())
+          }}
         />
       )}
     </div>
